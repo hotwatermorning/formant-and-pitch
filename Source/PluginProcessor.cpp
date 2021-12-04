@@ -344,10 +344,6 @@ void PluginAudioProcessor::getBufferDataForUI(AudioSampleBuffer &buf)
     for( ; ; ) {
         juce::Thread::sleep(1);
         std::unique_lock lock(_mtxUIData);
-        if(_uiRingBuffer.getReadableSize() < buf.getNumSamples()) {
-            continue;
-        }
-
         _uiRingBuffer.read(buf);
         break;
     }
