@@ -70,7 +70,7 @@ private:
     void timerCallback() override;
 
     juce::NormalisableRange<float> _graphRange;
-    std::vector<PluginAudioProcessor::SpectrumData> _spectrums;
+    juce::Array<PluginAudioProcessor::SpectrumData> _spectrums;
 
     PluginAudioProcessor& _processor;
 

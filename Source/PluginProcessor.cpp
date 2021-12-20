@@ -330,14 +330,14 @@ void PluginAudioProcessor::getBufferDataForUI(AudioSampleBuffer &buf)
     }
 }
 
-void PluginAudioProcessor::getSpectrumDataForUI(std::vector<SpectrumData> &buf)
+void PluginAudioProcessor::getSpectrumDataForUI(juce::Array<SpectrumData> &dest)
 {
-    if(buf.size() != getTotalNumInputChannels()) {
-        buf.resize(getTotalNumInputChannels());
+    if(dest.size() != getTotalNumInputChannels()) {
+        dest.resize(getTotalNumInputChannels());
     }
 
     auto fftSize = getFFTSize();
-    for(auto &data: buf) {
+    for(auto &data: dest) {
         data.resize(fftSize);
         data.clear();
     }
@@ -345,10 +345,10 @@ void PluginAudioProcessor::getSpectrumDataForUI(std::vector<SpectrumData> &buf)
 
     std::unique_lock lock(_mtxUIData);
 
-    for(int i = 0; i < buf.size(); ++i) {
+    for(int i = 0; i < dest.size(); ++i) {
         auto const & src = _spectrums[i];
-        auto & dest = buf[i];
-        dest.copyFrom(src);
+        auto & d = dest.data()[i];
+        d.copyFrom(src);
     }
 }
 

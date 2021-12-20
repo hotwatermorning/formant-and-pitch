@@ -144,7 +144,7 @@ public:
         }
     };
 
-    void getSpectrumDataForUI(std::vector<SpectrumData> &buf);
+    void getSpectrumDataForUI(juce::Array<SpectrumData> &buf);
 
     AudioParameterFloat * getFormantParameter();
     AudioParameterFloat * getPitchParameter();

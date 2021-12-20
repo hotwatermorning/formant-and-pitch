@@ -165,10 +165,10 @@ void Spectrum::paint(Graphics& g)
     auto h = getHeight();
     g.fillAll(juce::Colours::lightgreen);
 
-    if(_spectrums.empty()) { return; }
+    if(_spectrums.isEmpty()) { return; }
 
     // 現在は 0 番目のチャンネルのデータのみ描画
-    auto specData = _spectrums[0];
+    auto const &specData = _spectrums.data()[0];
 
     int const N = specData._originalSpectrum.size();
 
