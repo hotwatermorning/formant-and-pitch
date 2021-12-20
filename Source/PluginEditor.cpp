@@ -315,6 +315,12 @@ void Spectrum::paint(Graphics& g)
         g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
+
+    auto b = getLocalBounds().reduced(5);
+    b = b.removeFromTop(20);
+
+    g.setColour(juce::Colours::darkgrey);
+    g.drawText("Right click to customize graphs.", b, juce::Justification::centredRight);
 }
 
 void Spectrum::resized()
