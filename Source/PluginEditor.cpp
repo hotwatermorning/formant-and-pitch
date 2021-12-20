@@ -143,8 +143,9 @@ void Oscilloscope::timerCallback()
 
 Spectrum::Spectrum(PluginAudioProcessor& processor)
 :   _processor(processor)
-,   _skew(0, 0.5, 1.0)
+,   _graphRange(0, 1.0)
 {
+    _graphRange.setSkewForCentre(0.5);
     startTimer(30);
 
     _graphSettings[GraphIds::kOriginalSpectrum]    = GraphSetting { juce::Colours::black, true };
@@ -182,7 +183,7 @@ void Spectrum::paint(Graphics& g)
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             auto y = -((v - valueMin) / valueRange) * h + h;
             if(i == 0) {
                 p.startNewSubPath(0, y);
@@ -207,7 +208,7 @@ void Spectrum::paint(Graphics& g)
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::abs(data[i]), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
                 p.startNewSubPath(0, y);
             }
@@ -231,7 +232,7 @@ void Spectrum::paint(Graphics& g)
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(data[i].real(), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
                 p.startNewSubPath(0, y);
             }
@@ -255,7 +256,7 @@ void Spectrum::paint(Graphics& g)
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(data[i].real(), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
                 p.startNewSubPath(0, y);
             }
@@ -279,7 +280,7 @@ void Spectrum::paint(Graphics& g)
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
                 p.startNewSubPath(0, y);
             }
@@ -303,7 +304,7 @@ void Spectrum::paint(Graphics& g)
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            auto x = _graphRange.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
                 p.startNewSubPath(0, y);
             }

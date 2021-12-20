@@ -29,20 +29,6 @@ struct ParameterIds
     inline static const String outputGain = "Output Gain";
 };
 
-struct SkewedValue
-{
-    SkewedValue(double minValue, double midValue, double maxValue);
-
-    double convertFrom0to1(double x) const;
-    double convertTo0to1(double x) const;
-
-private:
-    double _minValue;
-    double _midValue;
-    double _maxValue;
-    double _skewFactor;
-};
-
 template<class T>
 AudioBuffer<T> getSubBufferOf(AudioBuffer<T> &src,
                               int numChannels,

@@ -12,29 +12,6 @@
 NS_HWM_BEGIN
 
 //==============================================================================
-
-SkewedValue::SkewedValue(double minValue, double midValue, double maxValue)
-{
-    _minValue = minValue;
-    _midValue = midValue;
-    _maxValue = maxValue;
-    _skewFactor = log(0.5) / log((midValue-minValue)/(maxValue-minValue));
-}
-
-double SkewedValue::convertFrom0to1(double x) const
-{
-    jassert(0.0 <= x && x <= 1.0);
-
-    auto tmp = std::exp(std::log(x) / _skewFactor);
-    return _minValue + (_maxValue - _minValue) * tmp;
-}
-
-double SkewedValue::convertTo0to1(double x) const
-{
-    return std::clamp(std::pow(x, _skewFactor), 0.0, 1.0);
-}
-
-//==============================================================================
 PluginAudioProcessor::PluginAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()

@@ -69,7 +69,7 @@ private:
 
     void timerCallback() override;
 
-    SkewedValue _skew;
+    juce::NormalisableRange<float> _graphRange;
     std::vector<PluginAudioProcessor::SpectrumData> _spectrums;
 
     PluginAudioProcessor& _processor;
