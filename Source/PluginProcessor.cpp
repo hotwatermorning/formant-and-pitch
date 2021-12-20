@@ -132,7 +132,7 @@ void PluginAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 
     _window.resize(fftSize);
     for(int i = 0; i < fftSize; ++i) {
-        _window[i] = 0.5 * (1.0 - cos(2.0 * M_PI * i / (double)fftSize));
+        _window.data()[i] = 0.5 * (1.0 - cos(2.0 * M_PI * i / (double)fftSize));
     }
 
     std::fill(_signalBuffer.begin(), _signalBuffer.end(), ComplexType{});
@@ -236,7 +236,7 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for( ; ; ) {
         if(bufferConsumed == bufferSize) { break; }
 
-        auto const numWritable = _inputRingBuffer.getWritableSize();
+        auto const numWritable = _inputRingBuffer.getNumWritable();
 
         assert(numWritable != 0);
 
@@ -262,17 +262,21 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
         buffer.addFrom(ch, 0, _wetBuffer.getReadPointer(ch), bufferSize, wetLevel);
     }
 
+    auto *outputGainParam = dynamic_cast<juce::AudioParameterFloat *>(_apvts.getParameter(ParameterIds::outputGain));
+    auto outputGain = juce::Decibels::decibelsToGain(outputGainParam->get(), Defines::outputGainSilent);
+
     for (int channel = 0; channel < totalNumOutputChannels; ++channel)
     {
         auto data = buffer.getWritePointer(channel);
+        FloatVectorOperations::multiply(data, outputGain, buffer.getNumSamples());
         FloatVectorOperations::clip(data, data, -1.5, 1.5, buffer.getNumSamples());
     }
 #endif
 
     {
         std::unique_lock lock(_mtxUIData);
-        if(_uiRingBuffer.getWritableSize() < buffer.getNumSamples()) {
-            _uiRingBuffer.discard(buffer.getNumSamples() - _uiRingBuffer.getWritableSize());
+        if(_uiRingBuffer.getNumWritable() < buffer.getNumSamples()) {
+            _uiRingBuffer.discard(buffer.getNumSamples() - _uiRingBuffer.getNumWritable());
         }
 
         _uiRingBuffer.write(buffer);
@@ -409,38 +413,42 @@ void PluginAudioProcessor::processAudioBlock()
     // 定期的に位相をリセット（暫定）
     static int phaseReset = 0;
     if((phaseReset++ % 1000) == 0) {
-        _prevInputPhases.clear();
-        _prevOutputPhases.clear();
+//        _prevInputPhases.clear();
+//        _prevOutputPhases.clear();
     }
 
     jassert(_signalBuffer.size() == fftSize);
     jassert(_frequencyBuffer.size() == fftSize);
     jassert(_cepstrumBuffer.size() == fftSize);
 
-    _inputRingBuffer.readWithoutCopy([&, this](int numChannels, auto const &bufferInfo) {
-        _bufferInfoList[numChannels] = bufferInfo;
-        assert(bufferInfo._len1 + bufferInfo._len2 >= fftSize);
+    _inputRingBuffer.readWithoutCopy([&, this](int ch, auto const &bi) {
+        _bufferInfoList.data()[ch] = bi;
+        assert(bi._len1 + bi._len2 >= fftSize);
     });
 
     _tmpBuffer.clear();
     for(int ch = 0; ch < numChannels; ++ch) {
         std::fill(_frequencyBuffer.begin(), _frequencyBuffer.end(), ComplexType{});
         std::fill(_cepstrumBuffer.begin(), _cepstrumBuffer.end(), ComplexType{});
-        auto & specData = _tmpSpectrums[ch];
-        auto &bi = _bufferInfoList[ch];
+        auto & specData = _tmpSpectrums.data()[ch];
+        auto &bi = _bufferInfoList.data()[ch];
 
         jassert(_overlapCount >= 1);
         for(int i = 0, end = std::min(fftSize, bi._len1); i < end; ++i) {
-            _signalBuffer[i] = ComplexType { bi._buf1[i] * _window[i] / _overlapCount, 0 };
+            _signalBuffer.data()[i] = ComplexType { bi._buf1[i] * _window[i] / _overlapCount, 0 };
         }
 
         for(int i = bi._len1, end = fftSize; i < end; ++i) {
-            _signalBuffer[i] = ComplexType { bi._buf2[i - bi._len1] *　_window[i] / _overlapCount, 0 };
+            _signalBuffer.data()[i] = ComplexType { bi._buf2[i - bi._len1] * _window.data()[i] / _overlapCount, 0 };
         }
 
 #if 1
         // スペクトルに変換
         _fft->perform(_signalBuffer.data(), _frequencyBuffer.data(), false);
+
+        for(int i = 0; i < fftSize; ++i) {
+            specData._originalSpectrum.data()[i] = _frequencyBuffer.data()[i];
+        }
 
 #if 0
         // fft 後の係数がどれくらいになるかを確認
@@ -464,32 +472,32 @@ void PluginAudioProcessor::processAudioBlock()
             for(int i = 0; i < fftSize; ++i) {
                 auto amp = std::abs(_frequencyBuffer[i]);
                 auto r = log(amp + std::numeric_limits<float>::epsilon());
-                _tmpFFTBuffer[i] = ComplexType { r, 0.0 };
+                _tmpFFTBuffer.data()[i] = ComplexType { r, 0.0 };
             }
 
             _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), false);
 
             for(int i = 0; i < fftSize; ++i) {
-                specData._cepstrum[i] = _cepstrumBuffer[i];
+                specData._originalCepstrum.data()[i] = _cepstrumBuffer[i];
             }
 
             // ケプストラムを liftering してスペクトル包絡を取得
 
             // envelope
-            _tmpFFTBuffer[0] = _cepstrumBuffer[0];
+            _tmpFFTBuffer.data()[0] = _cepstrumBuffer[0];
             for(int i = 1; i <= fftSize / 2; ++i) {
                 if(i < envelopOrder) {
-                    _tmpFFTBuffer[i] = _cepstrumBuffer[i];
-                    _tmpFFTBuffer[fftSize - i] = _cepstrumBuffer[i];
+                    _tmpFFTBuffer.data()[i] = _cepstrumBuffer[i];
+                    _tmpFFTBuffer.data()[fftSize - i] = _cepstrumBuffer[i];
                 } else {
-                    _tmpFFTBuffer[i] = _tmpFFTBuffer[fftSize - i] = ComplexType { 0, 0 };
+                    _tmpFFTBuffer.data()[i] = _tmpFFTBuffer[fftSize - i] = ComplexType { 0, 0 };
                 }
             }
 
             _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), true);
 
             for(int i = 0; i < fftSize; ++i) {
-                specData._envelope[i] = _tmpFFTBuffer2[i];
+                specData._envelope.data()[i] = _tmpFFTBuffer2[i];
             }
         }
 
@@ -515,11 +523,11 @@ void PluginAudioProcessor::processAudioBlock()
                 }
 
                 double newValue = (1.0 - diff) * leftValue + diff * rightValue;
-                specData._envelope[i].real(newValue);
+                specData._envelope.data()[i].real(newValue);
             }
 
             for(int i = 1; i <= fftSize / 2; ++i) {
-                specData._envelope[fftSize - i].real(specData._envelope[i].real());
+                specData._envelope.data()[fftSize - i].real(specData._envelope[i].real());
             }
         }
 #endif
@@ -543,8 +551,8 @@ void PluginAudioProcessor::processAudioBlock()
                 phaseDiff = wrapPhase(phaseDiff - binCenterFrequency * hopSize);
                 double binDeviation = phaseDiff * fftSize / hopSize / (2 * M_PI);
 
-                _analysisMagnitude[i] = magnitude;
-                _analysisFrequencies[i] = (float)(i + binDeviation);
+                _analysisMagnitude.data()[i] = magnitude;
+                _analysisFrequencies.data()[i] = (float)(i + binDeviation);
             }
 
             // 周波数変更
@@ -554,8 +562,8 @@ void PluginAudioProcessor::processAudioBlock()
                 int shiftedBin = std::floor(i / pitchChangeAmount + 0.5);
                 if(shiftedBin > fftSize / 2) { break; }
 
-                _synthesizeMagnitude[i] = _analysisMagnitude[shiftedBin];
-                _synthesizeFrequencies[i] = _analysisFrequencies[shiftedBin] * pitchChangeAmount;
+                _synthesizeMagnitude.data()[i] += _analysisMagnitude.data()[shiftedBin];
+                _synthesizeFrequencies.data()[i] = _analysisFrequencies.data()[shiftedBin] * pitchChangeAmount;
             }
 
             for(int i = 0; i <= fftSize / 2; ++i) {
@@ -566,7 +574,7 @@ void PluginAudioProcessor::processAudioBlock()
 
                 auto phase = wrapPhase(_prevOutputPhases.getReadPointer(ch)[i] + phaseDiff);
 
-                _frequencyBuffer[i] = ComplexType {
+                _frequencyBuffer.data()[i] = ComplexType {
                     (float)(_synthesizeMagnitude[i] * std::cos(phase)),
                     (float)(_synthesizeMagnitude[i] * std::sin(phase))
                 };
@@ -575,86 +583,118 @@ void PluginAudioProcessor::processAudioBlock()
             }
 
             for(int i = 1; i < fftSize / 2; ++i) {
-                _frequencyBuffer[fftSize - i] = std::conj(_frequencyBuffer[i]);
+                _frequencyBuffer.data()[fftSize - i] = std::conj(_frequencyBuffer.data()[i]);
             }
         }
 #endif
         for(int i = 0; i < fftSize; ++i) {
-            _tmpPhaseBuffer[i] = std::arg(_frequencyBuffer[i]);
+            _tmpPhaseBuffer.data()[i] = std::arg(_frequencyBuffer.data()[i]);
         }
 
+        // ピッチシフト後のスペクトル
         for(int i = 0; i < fftSize; ++i) {
-            specData._spectrum[i] = _frequencyBuffer[i];
+            specData._shiftedSpectrum.data()[i] = _frequencyBuffer.data()[i];
+        }
+
+        // ピッチが低い方にシフトされたとき、
+        // シフト後のスペクトルはナイキスト周波数のシフトされた位置で急激に値が下がるため、スペクトルを波形として捉えたときにその波形が不連続になる。
+        // このとき Envelope の次数が小さいと、不連続な部分での値の変動に追従できないため、その差分が FineStructure の方に現れてしまう。
+        // これによって FineStructure がナイキスト周波数のシフトされた位置付近で値が大きくなってしまい、高域のノイズになる。
+        // これを防ぐため、ナイキスト周波数のシフトされた位置の対数振幅スペクトルは、それ以下の振幅スペクトルのミラーとして計算するようにする。
+        if(pitchChangeAmount < 1.0) {
+            auto newNyquistPos = (int)std::round(fftSize * 0.5 * pitchChangeAmount);
+            for(int i = 0; i < fftSize / 2; ++i) {
+                if(newNyquistPos + i >= fftSize / 2) { break; }
+                if(newNyquistPos - i < 0) { break; }
+
+                _frequencyBuffer.data()[newNyquistPos + i] = _frequencyBuffer.data()[newNyquistPos - i];
+            }
+
+            for(int i = 1; i < fftSize / 2; ++i) {
+                _frequencyBuffer.data()[fftSize - i] = _frequencyBuffer.data()[i];
+            }
         }
 
 #if 1
         // ピッチシフト後の波形からケプストラムを計算し、微細構造だけを取り出す
         {
-            // 対数振幅スペクトルを IFFT してケプストラムを計算
+            // 対数振幅スペクトルを FFT してケプストラムを計算
             for(int i = 0; i < fftSize; ++i) {
                 auto amp = std::abs(_frequencyBuffer[i]);
                 auto r = log(amp + std::numeric_limits<float>::epsilon());
-                _tmpFFTBuffer[i] = ComplexType { r, 0.0 };
+                _tmpFFTBuffer.data()[i] = ComplexType { r, 0.0 };
             }
 
             _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), false);
 
             // fine structure
-            _tmpFFTBuffer[0] = ComplexType { 0, 0 };
+            _tmpFFTBuffer.data()[0] = ComplexType { 0, 0 };
             for(int i = 1; i <= fftSize / 2; ++i) {
                 if(i >= envelopOrder) {
-                    _tmpFFTBuffer[i] = _cepstrumBuffer[i];
-                    _tmpFFTBuffer[fftSize - i] = _cepstrumBuffer[i];
+                    _tmpFFTBuffer.data()[i] = _cepstrumBuffer.data()[i];
+                    _tmpFFTBuffer.data()[fftSize - i] = _cepstrumBuffer.data()[i];
                 } else {
-                    _tmpFFTBuffer[i] = _tmpFFTBuffer[fftSize - i] = ComplexType { 0, 0 };
+                    _tmpFFTBuffer.data()[i] = _tmpFFTBuffer.data()[fftSize - i] = ComplexType { 0, 0 };
+                }
+            }
+
+            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), true);
+
+            // ミラーした領域の微細構造は無視する
+            if(pitchChangeAmount < 1.0) {
+                auto newNyquistPos = (int)std::round(fftSize * 0.5 * pitchChangeAmount);
+
+                for(int i = newNyquistPos; i < fftSize / 2; ++i) {
+                    _tmpFFTBuffer2.data()[i] = ComplexType{};
+                }
+
+                for(int i = 1; i < fftSize / 2; ++i) {
+                    _tmpFFTBuffer2.data()[fftSize - i] = _tmpFFTBuffer2.data()[i];
+                }
+            }
+
+            for(int i = 0; i < fftSize; ++i) {
+                specData._fineStructure.data()[i] = _tmpFFTBuffer2.data()[i];
+            }
+
+#if 0
+            // use pitch shifted envelope
+            _tmpFFTBuffer.data()[0] = _cepstrumBuffer.data()[0];
+            for(int i = 1; i <= fftSize / 2; ++i) {
+                if(i < envelopOrder) {
+                    _tmpFFTBuffer.data()[i] = _cepstrumBuffer.data()[i];
+                    _tmpFFTBuffer.data()[fftSize - i] = _cepstrumBuffer.data()[i];
+                } else {
+                    _tmpFFTBuffer.data()[i] = _tmpFFTBuffer.data()[fftSize - i] = ComplexType { 0, 0 };
                 }
             }
 
             _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), true);
 
             for(int i = 0; i < fftSize; ++i) {
-                specData._fineStructure[i] = _tmpFFTBuffer2[i];
-            }
-
-#if 0
-            // use pitch shifted envelope
-            _tmpFFTBuffer[0] = _cepstrumBuffer[0];
-            for(int i = 1; i <= fftSize / 2; ++i) {
-                if(i < envelopOrder) {
-                    _tmpFFTBuffer[i] = _cepstrumBuffer[i];
-                    _tmpFFTBuffer[fftSize - i] = _cepstrumBuffer[i];
-                } else {
-                    _tmpFFTBuffer[i] = _tmpFFTBuffer[fftSize - i] = ComplexType { 0, 0 };
-                }
-            }
-
-            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), false);
-
-            for(int i = 0; i < fftSize; ++i) {
-                specData._envelope[i] = _tmpFFTBuffer2[i];
+                specData._envelope.data()[i] = _tmpFFTBuffer2.data()[i];
             }
 #endif
         }
 
-        // 変更したスペクトル包絡と微細構造からスペクトルを再構築
+        // フォルマントシフトしたスペクトル包絡とピッチシフト後の微細構造からスペクトルを再構築
 
         for(int i = 0; i <= fftSize / 2; ++i) {
             auto const amp = exp(specData._envelope[i].real() * envelopAmount + specData._fineStructure[i].real() * fineStructureAmount);
 
-            specData._amplitudeForSynthesis[i] = amp;
-
-            _frequencyBuffer[i] = ComplexType {
+            _frequencyBuffer.data()[i] = ComplexType {
                 (float)(amp * std::cos(_tmpPhaseBuffer[i])),
                 (float)(amp * std::sin(_tmpPhaseBuffer[i]))
             };
         }
 
         for(int i = 1; i < fftSize / 2; ++i) {
-            _frequencyBuffer[fftSize - i] = std::conj(_frequencyBuffer[i]);
+            _frequencyBuffer.data()[fftSize - i] = std::conj(_frequencyBuffer.data()[i]);
         }
 
+        // 再合成されたスペクトル
         for(int i = 0; i < fftSize; ++i) {
-            specData._spectrumSynthesized[i] = _frequencyBuffer[i];
+            specData._synthesisSpectrum.data()[i] = _frequencyBuffer.data()[i];
         }
 #endif
 
@@ -662,7 +702,7 @@ void PluginAudioProcessor::processAudioBlock()
 #endif
 
         for(int i = 0; i < fftSize; ++i) {
-            _signalBuffer[i] *= _window[i];
+            _signalBuffer.data()[i] *= _window.data()[i];
         }
 
         std::transform(_signalBuffer.begin(),
@@ -680,7 +720,7 @@ void PluginAudioProcessor::processAudioBlock()
     {
         std::unique_lock lock(_mtxUIData);
         for(int i = 0; i < _spectrums.size(); ++i) {
-            _spectrums[i].copyFrom(_tmpSpectrums[i]);
+            _spectrums.data()[i].copyFrom(_tmpSpectrums.data()[i]);
         }
     }
 
@@ -740,6 +780,19 @@ AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::createParame
             AudioProcessorParameter::genericParameter,
             [](float value, int /*maxLength*/) {
                 return String(value * 100.0f, 0);
+            },
+            nullptr));
+
+    group->addChild(
+        std::make_unique<AudioParameterFloat>(
+            ParameterIds::outputGain,
+            ParameterIds::outputGain,
+            NormalisableRange<float>{Defines::outputGainMin, Defines::outputGainMax},
+            Defines::outputGainDefault,
+            "dB",
+            AudioProcessorParameter::genericParameter,
+            [](float value, int /*maxLength*/) {
+                return String(value, 0);
             },
             nullptr));
 

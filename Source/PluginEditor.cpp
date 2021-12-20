@@ -146,6 +146,13 @@ Spectrum::Spectrum(PluginAudioProcessor& processor)
 ,   _skew(0, 0.5, 1.0)
 {
     startTimer(30);
+
+    _graphSettings[GraphIds::kOriginalSpectrum]    = GraphSetting { juce::Colours::black, true };
+    _graphSettings[GraphIds::kShiftedSpectrum]     = GraphSetting { juce::Colours::grey, true };
+    _graphSettings[GraphIds::kSynthesisSpectrum]   = GraphSetting { juce::Colours::green, true };
+    _graphSettings[GraphIds::kOriginalCepstrum]    = GraphSetting { juce::Colours::blue, true };
+    _graphSettings[GraphIds::kEnvelope]            = GraphSetting { juce::Colours::red, true };
+    _graphSettings[GraphIds::kFineStructure]       = GraphSetting { juce::Colours::lightcyan, true };
 }
 
 Spectrum::~Spectrum()
@@ -159,29 +166,14 @@ void Spectrum::paint(Graphics& g)
 
     if(_spectrums.empty()) { return; }
 
+    // 現在は 0 番目のチャンネルのデータのみ描画
     auto specData = _spectrums[0];
-    int const N = specData._spectrum.size();
-    int const historySize = _cepstrumHistory.size();
 
-    for(auto& cHist: _cepstrumHistory) {
-        cHist.resize(specData._cepstrum.size());
-    }
+    int const N = specData._originalSpectrum.size();
 
-    std::transform(specData._cepstrum.begin(),
-                   specData._cepstrum.end(),
-                   _cepstrumHistory[_cepstrumHistoryIndex].begin(),
-                   [](auto z) { return std::abs(z); }
-                   );
-
-    if(_cepstrumHistoryIndex != _cepstrumHistorySize - 1) {
-        _cepstrumHistoryIndex += 1;
-    } else {
-        _cepstrumHistoryIndex = 0;
-    }
-
-    // spectrum の描画
-    {
-        auto const data = specData._spectrum.data();
+    // オリジナル spectrum の描画
+    if(auto const &gs = getGraphSetting(GraphIds::kOriginalSpectrum); gs._enabled) {
+        auto const data = specData._originalSpectrum.data();
         float valueMax = 6.0;
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
@@ -199,13 +191,13 @@ void Spectrum::paint(Graphics& g)
             p.lineTo(x, y);
         }
 
-        g.setColour(Colours::black);
+        g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
 
-    // ケプストラムの描画
-    {
-        auto const data = specData._cepstrum.data();
+    // オリジナルのケプストラムの描画
+    if(auto const &gs = getGraphSetting(GraphIds::kOriginalCepstrum); gs._enabled) {
+        auto const data = specData._originalCepstrum.data();
         float valueMax = 300;
         float valueMin = 0;
         float valueRange = valueMax - valueMin;
@@ -213,14 +205,7 @@ void Spectrum::paint(Graphics& g)
         Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
-            float sum = 0;
-            for(int hi = 0; hi < _cepstrumHistorySize; ++hi) {
-                sum += _cepstrumHistory[hi][i];
-            }
-
-            sum /= _cepstrumHistorySize;
-
-            auto v = std::clamp(sum, valueMin, valueMax);
+            auto v = std::clamp(std::abs(data[i]), valueMin, valueMax);
             auto y = -((v - valueMin) / valueRange) * h + h;
             auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
             if(i == 0) {
@@ -230,12 +215,12 @@ void Spectrum::paint(Graphics& g)
             p.lineTo(x, y);
         }
 
-        g.setColour(Colours::blue);
+        g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
 
     // スペクトル包絡の描画
-    {
+    if(auto const &gs = getGraphSetting(GraphIds::kEnvelope); gs._enabled) {
         auto const data = specData._envelope.data();
         float valueMax = 6.0;
         float valueMin = -24.0;
@@ -254,12 +239,12 @@ void Spectrum::paint(Graphics& g)
             p.lineTo(x, y);
         }
 
-        g.setColour(Colours::red);
+        g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
 
     // 微細構造の描画
-    {
+    if(auto const &gs = getGraphSetting(GraphIds::kFineStructure); gs._enabled) {
         auto const data = specData._fineStructure.data();
         float valueMax = 6.0;
         float valueMin = -24.0;
@@ -278,37 +263,13 @@ void Spectrum::paint(Graphics& g)
             p.lineTo(x, y);
         }
 
-        g.setColour(Colours::lightcyan);
+        g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
 
-    // 再合成用振幅の描画
-    {
-        auto const data = specData._amplitudeForSynthesis.data();
-        float valueMax = 6.0;
-        float valueMin = -24.0;
-        float valueRange = valueMax - valueMin;
-
-        Path p;
-
-        for(int i = 0; i <= N / 2; ++i) {
-            auto v = std::clamp(data[i], valueMin, valueMax);
-            auto y = -((v - valueMin) / valueRange) * h + h;
-            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
-            if(i == 0) {
-                p.startNewSubPath(0, y);
-            }
-
-            p.lineTo(x, y);
-        }
-
-        g.setColour(Colours::brown);
-        g.strokePath(p, PathStrokeType(1.0));
-    }
-
-    // 再合成用スペクトルの描画
-    {
-        auto const data = specData._spectrumSynthesized.data();
+    // ピッチシフト後のスペクトルの描画
+    if(auto const &gs = getGraphSetting(GraphIds::kShiftedSpectrum); gs._enabled) {
+        auto const data = specData._shiftedSpectrum.data();
         float valueMax = 6.0;
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
@@ -326,7 +287,31 @@ void Spectrum::paint(Graphics& g)
             p.lineTo(x, y);
         }
 
-        g.setColour(Colours::dimgrey);
+        g.setColour(gs._color);
+        g.strokePath(p, PathStrokeType(1.0));
+    }
+
+    // 再合成用スペクトルの描画
+    if(auto const &gs = getGraphSetting(GraphIds::kSynthesisSpectrum); gs._enabled) {
+        auto const data = specData._synthesisSpectrum.data();
+        float valueMax = 6.0;
+        float valueMin = -24.0;
+        float valueRange = valueMax - valueMin;
+
+        Path p;
+
+        for(int i = 0; i <= N / 2; ++i) {
+            auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
+            auto y = -((v - valueMin) / valueRange) * h + h;
+            auto x = _skew.convertFrom0to1((float)i / (N / 2)) * w;
+            if(i == 0) {
+                p.startNewSubPath(0, y);
+            }
+
+            p.lineTo(x, y);
+        }
+
+        g.setColour(gs._color);
         g.strokePath(p, PathStrokeType(1.0));
     }
 }
@@ -340,6 +325,23 @@ void Spectrum::timerCallback()
 {
     _processor.getSpectrumDataForUI(_spectrums);
     repaint();
+}
+
+
+Spectrum::GraphSetting & Spectrum::getGraphSetting(GraphIds gid)
+{
+    auto found = _graphSettings.find(gid);
+    assert(found != _graphSettings.end());
+
+    return found->second;
+}
+
+Spectrum::GraphSetting const & Spectrum::getGraphSetting(GraphIds gid) const
+{
+    auto found = _graphSettings.find(gid);
+    assert(found != _graphSettings.end());
+
+    return found->second;
 }
 
 //==============================================================================

@@ -11,7 +11,7 @@ class XYPad
 {
 public:
     XYPad(PluginAudioProcessor& processor);
-    ~XYPad();
+    ~XYPad() override;
 
 private:
     void paint(Graphics& g) override;
@@ -42,7 +42,7 @@ class Oscilloscope
 {
 public:
     Oscilloscope(PluginAudioProcessor& processor);
-    ~Oscilloscope();
+    ~Oscilloscope() override;
 
 private:
     void paint(Graphics& g) override;
@@ -60,7 +60,7 @@ class Spectrum
 {
 public:
     Spectrum(PluginAudioProcessor& processor);
-    ~Spectrum();
+    ~Spectrum() override;
 
 private:
     void paint(Graphics& g) override;
@@ -70,11 +70,29 @@ private:
 
     SkewedValue _skew;
     std::vector<PluginAudioProcessor::SpectrumData> _spectrums;
-    static constexpr int _cepstrumHistorySize = 6;
-    std::array<std::vector<float>, _cepstrumHistorySize> _cepstrumHistory;
-    int _cepstrumHistoryIndex = 0;
 
     PluginAudioProcessor& _processor;
+
+    enum class GraphIds {
+        kOriginalSpectrum,
+        kShiftedSpectrum,
+        kSynthesisSpectrum,
+        kOriginalCepstrum,
+        kFineStructure,
+        kEnvelope,
+        kMaximumValue,
+    };
+
+    struct GraphSetting
+    {
+        juce::Colour _color;
+        bool _enabled;
+    };
+
+    std::map<GraphIds, GraphSetting> _graphSettings;
+
+    GraphSetting & getGraphSetting(GraphIds gid);
+    GraphSetting const & getGraphSetting(GraphIds gid) const;
 };
 
 //==============================================================================

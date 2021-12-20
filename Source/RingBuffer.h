@@ -28,14 +28,8 @@ struct RingBuffer
 
     void resize(int numChannels, int capacity)
     {
-        _buffer.resize(numChannels);
-        for(auto &chBuf: _buffer) {
-            // readPos と writePos が重なると、バッファがフルなのか空なのかが区別できなくなってしまうので、
-            // numCapacity 個のデータを保持してバッファがフルになっているときにも readPos と writePos が重ならないように、
-            // 1要素分余計に確保しておく。
-            chBuf.resize(capacity + 1);
-            std::fill(chBuf.begin(), chBuf.end(), T{});
-        }
+        _buffer.setSize(numChannels, capacity+1);
+        _buffer.clear();
 
         _capacity = capacity;
         _bufferLength = _capacity + 1;
@@ -54,7 +48,7 @@ struct RingBuffer
         return _capacity;
     }
 
-    int getReadableSize() const
+    int getNumReadable() const
     {
         auto r = _readPos.load();
         auto w = _writePos.load();
@@ -69,25 +63,32 @@ struct RingBuffer
         }
     }
 
-    int getWritableSize() const
+    int getNumWritable() const
     {
-        return _capacity - getReadableSize();
+        return _capacity - getNumReadable();
     }
 
     bool isFull() const
     {
-        return getWritableSize() == 0;
+        return getNumWritable() == 0;
     }
 
     bool isEmpty() const
     {
-        return getReadableSize() == 0;
+        return getNumReadable() == 0;
+    }
+
+    void clear()
+    {
+        _buffer.clear();
+        _readPos = 0;
+        _writePos = 0;
     }
 
     /** 指定した値を指定した長さだけ書き込む */
     bool fill(int length, T value = T{})
     {
-        if(length >  getWritableSize()) {
+        if(length > getNumWritable()) {
             return false;
         }
 
@@ -97,25 +98,25 @@ struct RingBuffer
         const int numToCopy1 = std::min<int>(bl - w, length);
         for(int ch = 0, end = _numChannels; ch < end; ++ch)
         {
-            auto& destBuffer = _buffer[ch];
-            std::fill_n(destBuffer.data() + w, numToCopy1, value);
+            auto& destBuffer = getBuffer()[ch];
+            std::fill_n(destBuffer + w, numToCopy1, value);
         }
 
         const int numToCopy2 = std::max<int>(length, numToCopy1) - numToCopy1;
         if(numToCopy2 == 0)
         {
             _writePos.store(w + numToCopy1);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
         else
         {
             for(int ch = 0, end = _numChannels; ch < end; ++ch)
             {
-                auto& destBuffer = _buffer[ch];
-                std::fill_n(destBuffer.data(), numToCopy2, value);
+                auto& destBuffer = getBuffer()[ch];
+                std::fill_n(destBuffer, numToCopy2, value);
             }
             _writePos.store(numToCopy2);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
 
         return true;
@@ -123,7 +124,7 @@ struct RingBuffer
 
     /** オーディオデータを書き込む
      *
-     *  buffer.getNumSamples() > getWritableSize() のときは、
+     *  buffer.getNumSamples() > getNumWritable() のときは、
      *  何もせずに false を返す。
      *
      *  @pre buffer.getNumChannels() == this->getNumChannels();
@@ -136,7 +137,7 @@ struct RingBuffer
 
         const int length = sourceBuffer.getNumSamples() - sourceStartIndex;
 
-        if(length > getWritableSize()) {
+        if(length > getNumWritable()) {
             return false;
         }
 
@@ -147,7 +148,7 @@ struct RingBuffer
         for(int ch = 0, end = _numChannels; ch < end; ++ch)
         {
             auto const * src = sourceBuffer.getReadPointer(ch) + sourceStartIndex;
-            auto * dest = _buffer[ch].data() + w;
+            auto * dest = getBuffer()[ch] + w;
             std::copy_n(src, numToCopy1, dest);
         }
 
@@ -155,19 +156,19 @@ struct RingBuffer
         if(numToCopy2 == 0)
         {
             _writePos.store(w + numToCopy1);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
         else
         {
             for(int ch = 0, end = _numChannels; ch < end; ++ch)
             {
                 auto const * src = sourceBuffer.getReadPointer(ch) + sourceStartIndex + numToCopy1;
-                auto * dest = _buffer[ch].data();
+                auto * dest = getBuffer()[ch];
                 std::copy_n(src, numToCopy2, dest);
 
             }
             _writePos.store(numToCopy2);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
 
         return true;
@@ -175,7 +176,7 @@ struct RingBuffer
 
     /** オーディオデータをオーバーラップして書き込む
      *
-     *  buffer.getNumSamples() > getWritableSize() のときは、
+     *  buffer.getNumSamples() > getNumWritable() のときは、
      *  何もせずに false を返す。
      *
      *  @pre buffer.getNumChannels() == this->getNumChannels();
@@ -192,7 +193,7 @@ struct RingBuffer
         const int length = sourceBuffer.getNumSamples() - sourceStartIndex;
 
         // オーバーラップしたい領域に対してまだ書き込まれていない場合はエラーにする
-        if(overlapLength > getReadableSize()) {
+        if(overlapLength > getNumReadable()) {
             return false;
         }
 
@@ -204,7 +205,7 @@ struct RingBuffer
         const int extLength = length - overlapLength;
 
         // 新しく拡張される領域のサイズが書き込みサイズを超えるときはエラーにする
-        if(extLength > getWritableSize()) {
+        if(extLength > getNumWritable()) {
             return false;
         }
 
@@ -226,8 +227,8 @@ struct RingBuffer
             const int numToClear2 = std::max<int>(extLength, numToClear1) - numToClear1;
 
             for(int ch = 0, end = _numChannels; ch < end; ++ch) {
-                auto * dest1 = _buffer[ch].data() + w;
-                auto * dest2 = _buffer[ch].data();
+                auto * dest1 = getBuffer()[ch] + w;
+                auto * dest2 = getBuffer()[ch];
 
                 std::fill_n(dest1, numToClear1, T{});
                 std::fill_n(dest2, numToClear2, T{});
@@ -240,25 +241,25 @@ struct RingBuffer
         for(int ch = 0, end = _numChannels; ch < end; ++ch)
         {
             auto const * src = sourceBuffer.getReadPointer(ch) + sourceStartIndex;
-            auto * dest = _buffer[ch].data() + overlapPos;
+            auto * dest = getBuffer()[ch] + overlapPos;
             add_n(src, numToCopy1, dest);
         }
 
         if(numToCopy2 == 0)
         {
             _writePos.store(overlapPos + numToCopy1);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
         else
         {
             for(int ch = 0, end = _numChannels; ch < end; ++ch)
             {
                 auto const * src = sourceBuffer.getReadPointer(ch) + sourceStartIndex + numToCopy1;
-                auto * dest = _buffer[ch].data();
+                auto * dest = getBuffer()[ch];
                 add_n(src, numToCopy2, dest);
             }
             _writePos.store(numToCopy2);
-            jassert(getReadableSize() >= 0);
+            jassert(getNumReadable() >= 0);
         }
 
         return true;
@@ -279,7 +280,7 @@ struct RingBuffer
     template<class F>
     void readWithoutCopy(F f) const
     {
-        const int length = getReadableSize();
+        const int length = getNumReadable();
         const int r = _readPos.load();
         const int bl = _bufferLength;
 
@@ -289,11 +290,11 @@ struct RingBuffer
         for(int ch = 0, end = _numChannels; ch < end; ++ch)
         {
             ConstBufferInfo bufferInfo;
-            bufferInfo._buf1 = _buffer[ch].data() + r;
+            bufferInfo._buf1 = getBuffer()[ch] + r;
             bufferInfo._len1 = len1;
 
             if(len2 != 0) {
-                bufferInfo._buf2 = _buffer[ch].data();
+                bufferInfo._buf2 = getBuffer()[ch];
                 bufferInfo._len2 = len2;
             }
 
@@ -303,7 +304,7 @@ struct RingBuffer
 
     /** オーディオデータを読み込む
      *
-     *  buffer.getNumSamples() > getReadableSize() のときは、
+     *  buffer.getNumSamples() > getNumReadable() のときは、
      *  何もせずに false を返す。
      *
      *  @pre buffer.getNumChannels() == this->getNumChannels();
@@ -316,11 +317,11 @@ struct RingBuffer
 
         const int length = destBuffer.getNumSamples() - destStartIndex;
 
-        if(length > getReadableSize()) {
+        if(length > getNumReadable()) {
             return false;
         }
 
-        readWithoutCopy([&, this](int channelIndex, const ConstBufferInfo& bufferInfo) {
+        readWithoutCopy([&](int channelIndex, const ConstBufferInfo& bufferInfo) {
             const int numToCopy1 = std::min(bufferInfo._len1, length);
             const int numToCopy2 = length - numToCopy1;
             if(numToCopy1 > 0) {
@@ -341,11 +342,11 @@ struct RingBuffer
     }
 
     /** 書き込まれたオーディオデータを捨てる。
-     *  @pre length <= getReadableSize()
+     *  @pre length <= getNumReadable()
      */
     void discard(int length)
     {
-        jassert(length <= getReadableSize());
+        jassert(length <= getNumReadable());
 
         const int r = _readPos.load();
         const int bl = _bufferLength;
@@ -361,16 +362,20 @@ struct RingBuffer
             _readPos.store(numToCopy2);
         }
 
-        jassert(getReadableSize() >= 0);
+        jassert(getNumReadable() >= 0);
     }
 
     void discardAll()
     {
-        discard(getReadableSize());
+        discard(getNumReadable());
     }
 
-   private:
-    std::vector<std::vector<T>> _buffer;
+private:
+    juce::AudioBuffer<T> _buffer;
+    T ** getBuffer() { return _buffer.getArrayOfWritePointers(); }
+    T const * const * getBuffer() const { return _buffer.getArrayOfReadPointers(); }
+    T const * const * getConstBuffer() const { return _buffer.getArrayOfReadPointers(); }
+
     int _capacity = 0;      // RingBuffer に書込み可能なデータの量
     int _bufferLength = 0;  // _buffer メンバ変数内の 1チャンネルのバッファの長さ
     int _numChannels = 0;

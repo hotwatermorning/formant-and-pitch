@@ -13,14 +13,20 @@
 
 NS_HWM_BEGIN
 
-using ComplexType = dsp::Complex<float>;
+struct Defines {
+    inline static constexpr float outputGainMin = -48.0f;
+    inline static constexpr float outputGainMax = 6.0f;
+    inline static constexpr float outputGainDefault = 0.0f;
+    inline static constexpr float outputGainSilent = -47.9f;
+};
 
 struct ParameterIds
 {
     inline static const String formant = "Formant";
     inline static const String pitch = "Pitch";
-    inline static const String dryWetRate = "Dry/Wet";
     inline static const String envelopeOrder = "Envelope Order";
+    inline static const String dryWetRate = "Dry/Wet";
+    inline static const String outputGain = "Output Gain";
 };
 
 struct SkewedValue
@@ -102,51 +108,53 @@ public:
 
     struct SpectrumData
     {
-        // 対数振幅スペクトル
-        std::vector<ComplexType> _spectrum;
-        // ケプストラム
-        std::vector<ComplexType> _cepstrum;
-        // スペクトル包絡
-        std::vector<ComplexType> _envelope;
-        // 微細構造
-        std::vector<ComplexType> _fineStructure;
+        // オリジナルの対数振幅スペクトル
+        juce::Array<ComplexType> _originalSpectrum;
+        // ピッチシフト後のスペクトル
+        juce::Array<ComplexType> _shiftedSpectrum;
+        // 合成用のスペクトル
+        juce::Array<ComplexType> _synthesisSpectrum;
 
-        std::vector<float> _amplitudeForSynthesis;
-        std::vector<ComplexType> _spectrumSynthesized;
+        // オリジナルのケプストラム
+        juce::Array<ComplexType> _originalCepstrum;
+        // スペクトル包絡
+        juce::Array<ComplexType> _envelope;
+        // 微細構造
+        juce::Array<ComplexType> _fineStructure;
 
         void resize(int n)
         {
-            _spectrum.resize(n);
-            _cepstrum.resize(n);
+            _originalSpectrum.resize(n);
+            _shiftedSpectrum.resize(n);
+            _synthesisSpectrum.resize(n);
+            _originalCepstrum.resize(n);
             _envelope.resize(n);
             _fineStructure.resize(n);
-            _amplitudeForSynthesis.resize(n);
-            _spectrumSynthesized.resize(n);
         }
 
         void clear()
         {
-            std::fill(_spectrum.begin(), _spectrum.end(), ComplexType{});
-            std::fill(_cepstrum.begin(), _cepstrum.end(), ComplexType{});
-            std::fill(_envelope.begin(), _envelope.end(), ComplexType{});
-            std::fill(_fineStructure.begin(), _fineStructure.end(), ComplexType{});
-            std::fill(_amplitudeForSynthesis.begin(), _amplitudeForSynthesis.end(), float{});
-            std::fill(_spectrumSynthesized.begin(), _spectrumSynthesized.end(), ComplexType{});
+            _originalSpectrum.fill(ComplexType{});
+            _shiftedSpectrum.fill(ComplexType{});
+            _synthesisSpectrum.fill(ComplexType{});
+            _originalCepstrum.fill(ComplexType{});
+            _envelope.fill(ComplexType{});
+            _fineStructure.fill(ComplexType{});
         }
 
         void copyFrom(SpectrumData const &src)
         {
-            auto copyImpl = [](auto& dest, auto const & src) {
-                assert(src.size() == dest.size());
-                std::copy_n(src.begin(), src.size(), dest.begin());
+            auto const copyImpl = [](juce::Array<ComplexType> & destArray, juce::Array<ComplexType> const & srcArray) {
+                assert(destArray.size() == srcArray.size());
+                std::copy_n(srcArray.data(), srcArray.size(), destArray.data());
             };
 
-            copyImpl(_spectrum, src._spectrum);
-            copyImpl(_cepstrum, src._cepstrum);
+            copyImpl(_originalSpectrum, src._originalSpectrum);
+            copyImpl(_shiftedSpectrum, src._shiftedSpectrum);
+            copyImpl(_synthesisSpectrum, src._synthesisSpectrum);
+            copyImpl(_originalCepstrum, src._originalCepstrum);
             copyImpl(_envelope, src._envelope);
             copyImpl(_fineStructure, src._fineStructure);
-            copyImpl(_amplitudeForSynthesis, src._amplitudeForSynthesis);
-            copyImpl(_spectrumSynthesized, src._spectrumSynthesized);
         }
     };
 
@@ -162,23 +170,23 @@ private:
 
     static constexpr int _fftOrder = 9;
     static constexpr int _overlapCount = 8;
-    int getFFTSize() const { return pow(2, _fftOrder); }
+    int getFFTSize() const { return 1 << _fftOrder; }
     int getOverlapSize() const { return getFFTSize() / _overlapCount; }
 
-    std::vector<ComplexType> _signalBuffer;
-    std::vector<ComplexType> _frequencyBuffer;
-    std::vector<ComplexType> _cepstrumBuffer;
-    std::vector<ComplexType> _tmpFFTBuffer;
-    std::vector<ComplexType> _tmpFFTBuffer2;
-    std::vector<float> _tmpPhaseBuffer;
+    juce::Array<ComplexType> _signalBuffer;
+    juce::Array<ComplexType> _frequencyBuffer;
+    juce::Array<ComplexType> _cepstrumBuffer;
+    juce::Array<ComplexType> _tmpFFTBuffer;
+    juce::Array<ComplexType> _tmpFFTBuffer2;
+    juce::Array<float> _tmpPhaseBuffer;
     std::unique_ptr<juce::dsp::FFT> _fft;
-    std::vector<float> _window;
+    juce::Array<float> _window;
     AudioSampleBuffer _prevInputPhases;
     AudioSampleBuffer _prevOutputPhases;
-    std::vector<double> _analysisMagnitude;
-    std::vector<double> _synthesizeMagnitude;
-    std::vector<double> _analysisFrequencies;
-    std::vector<double> _synthesizeFrequencies;
+    juce::Array<double> _analysisMagnitude;
+    juce::Array<double> _synthesizeMagnitude;
+    juce::Array<double> _analysisFrequencies;
+    juce::Array<double> _synthesizeFrequencies;
 
     // * _inputBuffer に ShiftSize ずつデータ追加。
     //     * （_inputBuffer は初期状態では FFTSize - ShiftSize だけデータが埋まっている状態にする）
@@ -194,7 +202,7 @@ private:
     //     * _overlappedBuffer から BufferSize 分のデータが取り出される
     // => _overlappedBuffer は初期状態で BufferSize + FFTSize - ShiftSize 分の無音を追加しておく必要あり
     RingBufferType _inputRingBuffer;
-    std::vector<RingBufferType::ConstBufferInfo> _bufferInfoList;
+    juce::Array<RingBufferType::ConstBufferInfo> _bufferInfoList;
     RingBufferType _outputRingBuffer;
 
     AudioSampleBuffer _tmpBuffer;
@@ -203,11 +211,10 @@ private:
     std::mutex _mtxUIData;
     RingBufferType _uiRingBuffer;
 
-    std::vector<SpectrumData> _spectrums;
-    std::vector<SpectrumData> _tmpSpectrums; // DSP 中に mutex をロックしないでデータを書き込んでおくためのバッファ
+    juce::Array<SpectrumData> _spectrums;
+    juce::Array<SpectrumData> _tmpSpectrums; // DSP 中に mutex をロックしないでデータを書き込んでおくためのバッファ
 
     void processAudioBlock();
-
     static AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     //==============================================================================
