@@ -327,6 +327,32 @@ void Spectrum::timerCallback()
     repaint();
 }
 
+void Spectrum::mouseUp(juce::MouseEvent const &ev)
+{
+    if(ev.mods.isRightButtonDown() == false) {
+        return;
+    }
+
+    juce::PopupMenu m;
+
+    auto addItem = [&, this](auto title, auto gid) {
+        auto *gs = &getGraphSetting(gid);
+        m.addItem(title, true, gs->_enabled, [gs] {
+            gs->_enabled = !gs->_enabled;
+        });
+    };
+
+    addItem("Original Spectrum", GraphIds::kOriginalSpectrum);
+    addItem("Shifted Spectrum", GraphIds::kShiftedSpectrum);
+    addItem("Synthesis Spectrum", GraphIds::kSynthesisSpectrum);
+    addItem("Original Cepstrum", GraphIds::kOriginalCepstrum);
+    addItem("Envelope", GraphIds::kEnvelope);
+    addItem("Fine Strucutre", GraphIds::kFineStructure);
+
+    auto area = juce::Rectangle<int>{}.withPosition(ev.getScreenPosition());
+    auto opt = juce::PopupMenu::Options{}.withTargetComponent(this).withTargetScreenArea(area);
+    m.showMenuAsync(opt);
+}
 
 Spectrum::GraphSetting & Spectrum::getGraphSetting(GraphIds gid)
 {

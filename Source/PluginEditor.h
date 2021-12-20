@@ -65,6 +65,7 @@ public:
 private:
     void paint(Graphics& g) override;
     void resized() override;
+    void mouseUp(juce::MouseEvent const &ev) override;
 
     void timerCallback() override;
 
