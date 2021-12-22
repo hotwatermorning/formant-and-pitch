@@ -19,7 +19,7 @@ void XYPad::paint(Graphics& g)
     auto x = getCoord(_cachedFormant);
     auto y = getHeight() - getCoord(_cachedPitch);
 
-    g.fillAll(juce::Colours::black.withLightness(0.1));
+    g.fillAll(juce::Colours::black.withLightness(0.1f));
     g.setColour(juce::Colours::white);
     g.fillEllipse(x - _radius, y - _radius, _radius * 2, _radius * 2);
 
@@ -52,7 +52,7 @@ void XYPad::mouseDrag(MouseEvent const & mouse)
     repaint();
 }
 
-void XYPad::mouseUp(MouseEvent const & mouse)
+void XYPad::mouseUp(MouseEvent const &)
 {
     _dragging = false;
     repaint();
@@ -116,16 +116,16 @@ void Oscilloscope::paint(Graphics& g)
     g.fillAll(juce::Colours::pink);
 
     Path p;
-    p.startNewSubPath(0, 0.5 * h);
+    p.startNewSubPath(0, 0.5f * h);
 
     auto const data = _buffer.getReadPointer(0);
     auto const N = _buffer.getNumSamples();
     for(int i = 0; i < N; ++i) {
-        p.lineTo((float)i / N * w, -(data[i] / 2.0 - 0.5) * h);
+        p.lineTo((float)i / N * w, -(data[i] / 2.0f - 0.5f) * h);
     }
 
     g.setColour(Colours::black);
-    g.strokePath(p, PathStrokeType(1.0));
+    g.strokePath(p, PathStrokeType(1.0f));
 }
 
 void Oscilloscope::resized()
@@ -168,7 +168,7 @@ void Spectrum::paint(Graphics& g)
     if(_spectrums.isEmpty()) { return; }
 
     // 現在は 0 番目のチャンネルのデータのみ描画
-    auto const &specData = _spectrums.data()[0];
+    auto const &specData = _spectrums[0];
 
     int const N = specData._originalSpectrum.size();
 
@@ -199,7 +199,7 @@ void Spectrum::paint(Graphics& g)
     // オリジナルのケプストラムの描画
     if(auto const &gs = getGraphSetting(GraphIds::kOriginalCepstrum); gs._enabled) {
         auto const data = specData._originalCepstrum.data();
-        float valueMax = 300;
+        float valueMax = 1;
         float valueMin = 0;
         float valueRange = valueMax - valueMin;
 

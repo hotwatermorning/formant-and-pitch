@@ -10,3 +10,6 @@ NS_HWM_BEGIN
 using ComplexType = dsp::Complex<float>;
 
 NS_HWM_END
+
+#include "RingBuffer.h"
+#include "ReferenceableArray.h"

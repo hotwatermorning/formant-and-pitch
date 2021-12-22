@@ -34,6 +34,7 @@ set(SOURCE_FILES
     Source/PluginEditor.cpp
     Source/PluginEditor.h
     Source/RingBuffer.h
+    Source/ReferenceableArray.h
     Source/prefix.h
     )
 
@@ -51,6 +52,7 @@ target_compile_definitions(${TARGET_NAME}
 target_compile_options(${TARGET_NAME}
     PRIVATE
     $<$<CXX_COMPILER_ID:Clang,GNU>:-Werror=return-type>
+    $<$<CXX_COMPILER_ID:MSVC>:/source-charset:utf-8>
     )
 
 # juce_add_binary_data(AudioPluginData SOURCES ...)

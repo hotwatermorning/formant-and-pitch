@@ -95,18 +95,18 @@ public:
     struct SpectrumData
     {
         // オリジナルの対数振幅スペクトル
-        juce::Array<ComplexType> _originalSpectrum;
+        ReferenceableArray<ComplexType> _originalSpectrum;
         // ピッチシフト後のスペクトル
-        juce::Array<ComplexType> _shiftedSpectrum;
+        ReferenceableArray<ComplexType> _shiftedSpectrum;
         // 合成用のスペクトル
-        juce::Array<ComplexType> _synthesisSpectrum;
+        ReferenceableArray<ComplexType> _synthesisSpectrum;
 
         // オリジナルのケプストラム
-        juce::Array<ComplexType> _originalCepstrum;
+        ReferenceableArray<ComplexType> _originalCepstrum;
         // スペクトル包絡
-        juce::Array<ComplexType> _envelope;
+        ReferenceableArray<ComplexType> _envelope;
         // 微細構造
-        juce::Array<ComplexType> _fineStructure;
+        ReferenceableArray<ComplexType> _fineStructure;
 
         void resize(int n)
         {
@@ -130,7 +130,7 @@ public:
 
         void copyFrom(SpectrumData const &src)
         {
-            auto const copyImpl = [](juce::Array<ComplexType> & destArray, juce::Array<ComplexType> const & srcArray) {
+            auto const copyImpl = [](auto & destArray, auto const & srcArray) {
                 assert(destArray.size() == srcArray.size());
                 std::copy_n(srcArray.data(), srcArray.size(), destArray.data());
             };
@@ -144,7 +144,7 @@ public:
         }
     };
 
-    void getSpectrumDataForUI(juce::Array<SpectrumData> &buf);
+    void getSpectrumDataForUI(ReferenceableArray<SpectrumData> &buf);
 
     AudioParameterFloat * getFormantParameter();
     AudioParameterFloat * getPitchParameter();
@@ -159,36 +159,23 @@ private:
     int getFFTSize() const { return 1 << _fftOrder; }
     int getOverlapSize() const { return getFFTSize() / _overlapCount; }
 
-    juce::Array<ComplexType> _signalBuffer;
-    juce::Array<ComplexType> _frequencyBuffer;
-    juce::Array<ComplexType> _cepstrumBuffer;
-    juce::Array<ComplexType> _tmpFFTBuffer;
-    juce::Array<ComplexType> _tmpFFTBuffer2;
-    juce::Array<float> _tmpPhaseBuffer;
+    ReferenceableArray<ComplexType> _signalBuffer;
+    ReferenceableArray<ComplexType> _frequencyBuffer;
+    ReferenceableArray<ComplexType> _cepstrumBuffer;
+    ReferenceableArray<ComplexType> _tmpFFTBuffer;
+    ReferenceableArray<ComplexType> _tmpFFTBuffer2;
+    ReferenceableArray<float> _tmpPhaseBuffer;
     std::unique_ptr<juce::dsp::FFT> _fft;
-    juce::Array<float> _window;
+    ReferenceableArray<float> _window;
     AudioSampleBuffer _prevInputPhases;
     AudioSampleBuffer _prevOutputPhases;
-    juce::Array<double> _analysisMagnitude;
-    juce::Array<double> _synthesizeMagnitude;
-    juce::Array<double> _analysisFrequencies;
-    juce::Array<double> _synthesizeFrequencies;
+    ReferenceableArray<double> _analysisMagnitude;
+    ReferenceableArray<double> _synthesizeMagnitude;
+    ReferenceableArray<double> _analysisFrequencies;
+    ReferenceableArray<double> _synthesizeFrequencies;
 
-    // * _inputBuffer に ShiftSize ずつデータ追加。
-    //     * （_inputBuffer は初期状態では FFTSize - ShiftSize だけデータが埋まっている状態にする）
-    // * _inputAudioBuffer がフルになったらフレーム処理
-    // * 処理した1フレーム分のデータを _outputAudioBuffer に overlapAdd
-
-    // * BufferSize > ShiftSize のとき
-    //     * ShiftSize 単位で何度か処理を行う
-    //     * (ShiftSize - n) のデータが _inputBuffer に追加され、 _overlappedBuffer からその分のデータが取り出される
-    // * BufferSize < ShiftSize のとき
-    //     * 何回か BufferSize 分のデータが _inputBuffer に追加される
-    //     * ShiftSize に達したときはその分が FFTSize 分のフレーム処理が走って _overlappedBuffer に ShiftSize のデータが追加される
-    //     * _overlappedBuffer から BufferSize 分のデータが取り出される
-    // => _overlappedBuffer は初期状態で BufferSize + FFTSize - ShiftSize 分の無音を追加しておく必要あり
     RingBufferType _inputRingBuffer;
-    juce::Array<RingBufferType::ConstBufferInfo> _bufferInfoList;
+    ReferenceableArray<RingBufferType::ConstBufferInfo> _bufferInfoList;
     RingBufferType _outputRingBuffer;
 
     AudioSampleBuffer _tmpBuffer;
@@ -197,11 +184,15 @@ private:
     std::mutex _mtxUIData;
     RingBufferType _uiRingBuffer;
 
-    juce::Array<SpectrumData> _spectrums;
-    juce::Array<SpectrumData> _tmpSpectrums; // DSP 中に mutex をロックしないでデータを書き込んでおくためのバッファ
+    ReferenceableArray<SpectrumData> _spectrums;
+    ReferenceableArray<SpectrumData> _tmpSpectrums; // DSP 中に mutex をロックしないでデータを書き込んでおくためのバッファ
 
     void processAudioBlock();
     static AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // 変換した信号の音量が変わってしまうのを補正するための係数。
+    // 毎回の解析でこれをやると音量の変化が大きくなりすぎることがあるのでスムーズに変換するようにしている。
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> _smoothedGain;
 
     //==============================================================================
     JUCE_DECLARE_WEAK_REFERENCEABLE(PluginAudioProcessor)
