@@ -14,7 +14,7 @@ XYPad::XYPad(PluginAudioProcessor& processor)
 XYPad::~XYPad()
 {}
 
-void XYPad::paint(Graphics& g)
+void XYPad::paint(juce::Graphics& g)
 {
     auto w = getWidth();
     auto h = getHeight();
@@ -45,12 +45,12 @@ void XYPad::resized()
 {
 }
 
-void XYPad::mouseDown(MouseEvent const & mouse)
+void XYPad::mouseDown(juce::MouseEvent const & mouse)
 {
     mouseDrag(mouse);
 }
 
-void XYPad::mouseDrag(MouseEvent const & mouse)
+void XYPad::mouseDrag(juce::MouseEvent const & mouse)
 {
     _dragging = true;
     
@@ -64,7 +64,7 @@ void XYPad::mouseDrag(MouseEvent const & mouse)
     repaint();
 }
 
-void XYPad::mouseUp(MouseEvent const &)
+void XYPad::mouseUp(juce::MouseEvent const &)
 {
     _dragging = false;
     repaint();
@@ -89,7 +89,7 @@ float XYPad::getValue(float coord) const
     auto w = getWidth() - _radius * 2;
     auto half = w / 2.0f;
     jassert(half != 0);
-    return jlimit(-100.0f, 100.0f, (coord - half - _radius) / half * 100.0f);
+    return juce::jlimit(-100.0f, 100.0f, (coord - half - _radius) / half * 100.0f);
 }
 
 bool XYPad::updateParameterCaches()
@@ -121,13 +121,13 @@ Oscilloscope::Oscilloscope(PluginAudioProcessor& processor)
 Oscilloscope::~Oscilloscope()
 {}
 
-void Oscilloscope::paint(Graphics& g)
+void Oscilloscope::paint(juce::Graphics& g)
 {
     auto w = getWidth();
     auto h = getHeight();
     g.fillAll(juce::Colours::pink);
 
-    Path p;
+    juce::Path p;
     p.startNewSubPath(0, 0.5f * h);
 
     auto const data = _buffer.getReadPointer(0);
@@ -136,8 +136,8 @@ void Oscilloscope::paint(Graphics& g)
         p.lineTo((float)i / N * w, -(data[i] / 2.0f - 0.5f) * h);
     }
 
-    g.setColour(Colours::black);
-    g.strokePath(p, PathStrokeType(1.0f));
+    g.setColour(juce::Colours::black);
+    g.strokePath(p, juce::PathStrokeType(1.0f));
 }
 
 void Oscilloscope::resized()
@@ -171,7 +171,7 @@ Spectrum::Spectrum(PluginAudioProcessor& processor)
 Spectrum::~Spectrum()
 {}
 
-void Spectrum::paint(Graphics& g)
+void Spectrum::paint(juce::Graphics& g)
 {
     auto w = getWidth();
     auto h = getHeight();
@@ -191,7 +191,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
@@ -205,7 +205,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     // オリジナルのケプストラムの描画
@@ -215,7 +215,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = 0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::abs(data[i]), valueMin, valueMax);
@@ -229,7 +229,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     // スペクトル包絡の描画
@@ -239,7 +239,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(data[i].real(), valueMin, valueMax);
@@ -253,7 +253,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     // 微細構造の描画
@@ -263,7 +263,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(data[i].real(), valueMin, valueMax);
@@ -277,7 +277,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     // ピッチシフト後のスペクトルの描画
@@ -287,7 +287,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
@@ -301,7 +301,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     // 再合成用スペクトルの描画
@@ -311,7 +311,7 @@ void Spectrum::paint(Graphics& g)
         float valueMin = -24.0;
         float valueRange = valueMax - valueMin;
 
-        Path p;
+        juce::Path p;
 
         for(int i = 0; i <= N / 2; ++i) {
             auto v = std::clamp(std::log(std::abs(data[i])), valueMin, valueMax);
@@ -325,7 +325,7 @@ void Spectrum::paint(Graphics& g)
         }
 
         g.setColour(gs._color);
-        g.strokePath(p, PathStrokeType(1.0));
+        g.strokePath(p, juce::PathStrokeType(1.0));
     }
 
     auto b = getLocalBounds().reduced(5);

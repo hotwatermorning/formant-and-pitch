@@ -1,11 +1,3 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -253,8 +245,8 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (int channel = 0; channel < totalNumOutputChannels; ++channel)
     {
         auto data = buffer.getWritePointer(channel);
-        FloatVectorOperations::multiply(data, outputGain, buffer.getNumSamples());
-        FloatVectorOperations::clip(data, data, -1.5, 1.5, buffer.getNumSamples());
+        FVO::multiply(data, outputGain, buffer.getNumSamples());
+        FVO::clip(data, data, -1.5, 1.5, buffer.getNumSamples());
     }
 #endif
 
@@ -282,11 +274,11 @@ juce::AudioProcessorEditor* PluginAudioProcessor::createEditor()
 //==============================================================================
 void PluginAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    std::unique_ptr<XmlElement> xmlState(new XmlElement("PluginState"));
+    std::unique_ptr<juce::XmlElement> xmlState(new juce::XmlElement("PluginState"));
     xmlState->setAttribute("Plugin_Version", JucePlugin_VersionString);
     {
-        MemoryOutputStream mem(2048);
-        std::unique_ptr<XmlElement> xmlElm(this->_apvts.copyState().createXml());
+        juce::MemoryOutputStream mem(2048);
+        std::unique_ptr<juce::XmlElement> xmlElm(this->_apvts.copyState().createXml());
         xmlElm->writeTo(mem, {});
         xmlState->setAttribute("ProcessorState", mem.toUTF8());
     }
@@ -299,7 +291,7 @@ void PluginAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void PluginAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<XmlElement> xmlState{getXmlFromBinary(data, sizeInBytes)};
+    std::unique_ptr<juce::XmlElement> xmlState{getXmlFromBinary(data, sizeInBytes)};
     if(!xmlState) { return; }
 
     auto versionXml = xmlState->getStringAttribute("Plugin_Version");
@@ -316,12 +308,12 @@ void PluginAudioProcessor::setStateInformation (const void* data, int sizeInByte
     {
         if(auto xml = juce::parseXML(processorStateXml))
         {
-            this->_apvts.replaceState(ValueTree::fromXml(*xml));
+            this->_apvts.replaceState(juce::ValueTree::fromXml(*xml));
         }
     }
 }
 
-void PluginAudioProcessor::getBufferDataForUI(AudioSampleBuffer &buf)
+void PluginAudioProcessor::getBufferDataForUI(juce::AudioSampleBuffer &buf)
 {
     if(buf.getNumChannels() != getTotalNumInputChannels() ||
        buf.getNumSamples() != getBlockSize()
@@ -360,14 +352,14 @@ void PluginAudioProcessor::getSpectrumDataForUI(ReferenceableArray<SpectrumData>
     }
 }
 
-AudioParameterFloat * PluginAudioProcessor::getFormantParameter()
+juce::AudioParameterFloat * PluginAudioProcessor::getFormantParameter()
 {
-    return dynamic_cast<AudioParameterFloat*>(_apvts.getParameter(ParameterIds::formant));
+    return dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::formant));
 }
 
-AudioParameterFloat * PluginAudioProcessor::getPitchParameter()
+juce::AudioParameterFloat * PluginAudioProcessor::getPitchParameter()
 {
-    return dynamic_cast<AudioParameterFloat*>(_apvts.getParameter(ParameterIds::pitch));
+    return dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::pitch));
 }
 
 // Helper function to wrap the phase between -pi and pi
@@ -413,14 +405,14 @@ void PluginAudioProcessor::processAudioBlock()
         assert(bi._len1 + bi._len2 >= fftSize);
     });
 
-    auto const validate_array = [](ReferenceableArray<ComplexType> const &arr) {
-        return std::none_of(arr.begin(), arr.end(), [](ComplexType c) {
-            auto n = std::norm(c);
-            auto r = std::isnan(n) || std::isinf(n);
-            assert(r == false);
-            return r;
-        });
-    };
+//    auto const validate_array = [](ReferenceableArray<ComplexType> const &arr) {
+//        return std::none_of(arr.begin(), arr.end(), [](ComplexType c) {
+//            auto n = std::norm(c);
+//            auto r = std::isnan(n) || std::isinf(n);
+//            assert(r == false);
+//            return r;
+//        });
+//    };
 
     _tmpBuffer.clear();
     for(int ch = 0; ch < numChannels; ++ch) {
@@ -759,7 +751,7 @@ void PluginAudioProcessor::processAudioBlock()
         float const expectedGainAmount = (float)std::sqrt((powerOfSynthesizedSignals == 0) ? 1.0 : powerOfFrameSignals / powerOfSynthesizedSignals);
         _smoothedGain.setTargetValue(expectedGainAmount);
         float const newGainAmount = _smoothedGain.getNextValue();
-        juce::FloatVectorOperations::multiply(_tmpBuffer.getWritePointer(ch), newGainAmount, fftSize);
+        FVO::multiply(_tmpBuffer.getWritePointer(ch), newGainAmount, fftSize);
 
 //        for(int i = 0; i < fftSize; ++i) {
 //            auto x = _tmpBuffer.getReadPointer(ch)[i];
@@ -790,69 +782,69 @@ void PluginAudioProcessor::processAudioBlock()
 #endif
 }
 
-AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::createParameterLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::createParameterLayout()
 {
-    auto group = std::make_unique<AudioProcessorParameterGroup>("Group", "Global", "|");
+    auto group = std::make_unique<juce::AudioProcessorParameterGroup>("Group", "Global", "|");
 
     group->addChild(
-        std::make_unique<AudioParameterFloat>(
+        std::make_unique<juce::AudioParameterFloat>(
             ParameterIds::formant,
             ParameterIds::formant,
-            NormalisableRange<float>{-100.0f, 100.0f},
+            juce::NormalisableRange<float>{-100.0f, 100.0f},
             0.0f,
             "%",
-            AudioProcessorParameter::genericParameter,
+            juce::AudioProcessorParameter::genericParameter,
             [](float value, int /*maxLength*/) {
-                return String(value, 2);
+                return juce::String(value, 2);
             },
             nullptr));
 
     group->addChild(
-        std::make_unique<AudioParameterFloat>(
+        std::make_unique<juce::AudioParameterFloat>(
             ParameterIds::pitch,
             ParameterIds::pitch,
-            NormalisableRange<float>{-100.0f, 100.0f},
+            juce::NormalisableRange<float>{-100.0f, 100.0f},
             0.0f,
             "%",
-            AudioProcessorParameter::genericParameter,
+            juce::AudioProcessorParameter::genericParameter,
             [](float value, int /*maxLength*/) {
-                return String(value, 0);
+                return juce::String(value, 0);
             },
             nullptr));
 
     group->addChild(
-        std::make_unique<AudioParameterInt>(
+        std::make_unique<juce::AudioParameterInt>(
             ParameterIds::envelopeOrder,
             ParameterIds::envelopeOrder,
             2, 90, 20, ""));
 
     group->addChild(
-        std::make_unique<AudioParameterFloat>(
+        std::make_unique<juce::AudioParameterFloat>(
             ParameterIds::dryWetRate,
             ParameterIds::dryWetRate,
-            NormalisableRange<float>{0.0f, 1.0f},
+            juce::NormalisableRange<float>{0.0f, 1.0f},
             0.5f,
             "%",
-            AudioProcessorParameter::genericParameter,
+            juce::AudioProcessorParameter::genericParameter,
             [](float value, int /*maxLength*/) {
-                return String(value * 100.0f, 0);
+                return juce::String(value * 100.0f, 0);
             },
             nullptr));
 
     group->addChild(
-        std::make_unique<AudioParameterFloat>(
+        std::make_unique<juce::AudioParameterFloat>(
             ParameterIds::outputGain,
             ParameterIds::outputGain,
-            NormalisableRange<float>{Defines::outputGainMin, Defines::outputGainMax},
+            juce::NormalisableRange<float>{Defines::outputGainMin, Defines::outputGainMax},
             Defines::outputGainDefault,
             "dB",
-            AudioProcessorParameter::genericParameter,
+            juce::AudioProcessorParameter::genericParameter,
             [](float value, int /*maxLength*/) {
-                return String(value, 0);
+                return juce::String(value, 0);
             },
             nullptr));
 
-    return AudioProcessorValueTreeState::ParameterLayout(std::move(group));
+    return juce::AudioProcessorValueTreeState::ParameterLayout(std::move(group));
 }
 
 NS_HWM_END

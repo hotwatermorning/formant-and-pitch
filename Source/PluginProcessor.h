@@ -1,15 +1,9 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #pragma once
 
-#include "prefix.h"
+#include "Prefix.h"
 #include "RingBuffer.h"
+#include "AudioBufferUtil.h"
+#include "ReferenceableArray.h"
 
 NS_HWM_BEGIN
 
@@ -22,35 +16,15 @@ struct Defines {
 
 struct ParameterIds
 {
-    inline static const String formant = "Formant";
-    inline static const String pitch = "Pitch";
-    inline static const String envelopeOrder = "Envelope Order";
-    inline static const String dryWetRate = "Dry/Wet";
-    inline static const String outputGain = "Output Gain";
+    inline static const juce::String formant = "Formant";
+    inline static const juce::String pitch = "Pitch";
+    inline static const juce::String envelopeOrder = "Envelope Order";
+    inline static const juce::String dryWetRate = "Dry/Wet";
+    inline static const juce::String outputGain = "Output Gain";
 };
 
-template<class T>
-AudioBuffer<T> getSubBufferOf(AudioBuffer<T> &src,
-                              int numChannels,
-                              int startSample,
-                              int length)
-{
-    return AudioBuffer<T>(src.getArrayOfWritePointers(),
-                          numChannels,
-                          startSample,
-                          length);
-}
-
-template<class T>
-AudioBuffer<T> getSubBufferOf(AudioBuffer<T> &src,
-                              int numChannels,
-                              int length)
-{
-    return getSubBufferOf(src, numChannels, 0, length);
-}
-
-
-class PluginAudioProcessor  : public juce::AudioProcessor
+class PluginAudioProcessor
+:   public juce::AudioProcessor
 {
 public:
     //==============================================================================
@@ -90,7 +64,7 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    void getBufferDataForUI(AudioSampleBuffer &buf);
+    void getBufferDataForUI(juce::AudioSampleBuffer &buf);
 
     struct SpectrumData
     {
@@ -146,11 +120,11 @@ public:
 
     void getSpectrumDataForUI(ReferenceableArray<SpectrumData> &buf);
 
-    AudioParameterFloat * getFormantParameter();
-    AudioParameterFloat * getPitchParameter();
+    juce::AudioParameterFloat * getFormantParameter();
+    juce::AudioParameterFloat * getPitchParameter();
 
 private:
-    AudioProcessorValueTreeState _apvts;
+    juce::AudioProcessorValueTreeState _apvts;
 
     using RingBufferType = RingBuffer<float>;
 
@@ -167,8 +141,8 @@ private:
     ReferenceableArray<float> _tmpPhaseBuffer;
     std::unique_ptr<juce::dsp::FFT> _fft;
     ReferenceableArray<float> _window;
-    AudioSampleBuffer _prevInputPhases;
-    AudioSampleBuffer _prevOutputPhases;
+    juce::AudioSampleBuffer _prevInputPhases;
+    juce::AudioSampleBuffer _prevOutputPhases;
     ReferenceableArray<double> _analysisMagnitude;
     ReferenceableArray<double> _synthesizeMagnitude;
     ReferenceableArray<double> _analysisFrequencies;
@@ -178,8 +152,8 @@ private:
     ReferenceableArray<RingBufferType::ConstBufferInfo> _bufferInfoList;
     RingBufferType _outputRingBuffer;
 
-    AudioSampleBuffer _tmpBuffer;
-    AudioSampleBuffer _wetBuffer;
+    juce::AudioSampleBuffer _tmpBuffer;
+    juce::AudioSampleBuffer _wetBuffer;
 
     std::mutex _mtxUIData;
     RingBufferType _uiRingBuffer;
@@ -188,7 +162,7 @@ private:
     ReferenceableArray<SpectrumData> _tmpSpectrums; // DSP 中に mutex をロックしないでデータを書き込んでおくためのバッファ
 
     void processAudioBlock();
-    static AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     // 変換した信号の音量が変わってしまうのを補正するための係数。
     // 毎回の解析でこれをやると音量の変化が大きくなりすぎることがあるのでスムーズに変換するようにしている。

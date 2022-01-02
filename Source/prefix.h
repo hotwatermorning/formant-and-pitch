@@ -7,9 +7,8 @@
 
 NS_HWM_BEGIN
 
-using ComplexType = dsp::Complex<float>;
+using ComplexType = juce::dsp::Complex<float>;
+using FVO = juce::FloatVectorOperations;
 
 NS_HWM_END
 
-#include "RingBuffer.h"
-#include "ReferenceableArray.h"

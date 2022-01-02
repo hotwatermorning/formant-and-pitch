@@ -1,13 +1,20 @@
 #pragma once
-#include "prefix.h"
+#include "Prefix.h"
 
-template<class T, typename TypeOfCriticalSectionToUse = DummyCriticalSection, int minimumAllocatedSize = 0>
-class ReferenceableArray : private juce::Array<T, TypeOfCriticalSectionToUse, minimumAllocatedSize>
+NS_HWM_BEGIN
+
+template<class T,
+         class TypeOfCriticalSectionToUse = juce::DummyCriticalSection,
+         int minimumAllocatedSize = 0
+>
+class ReferenceableArray
+:   private juce::Array<T, TypeOfCriticalSectionToUse, minimumAllocatedSize>
 {
 public:
     using base_type = juce::Array<T, TypeOfCriticalSectionToUse, minimumAllocatedSize>;
 
     template<class ...Args>
+    explicit
     ReferenceableArray(Args&& ...args)
     :   base_type(std::forward<Args>(args)...)
     {}
@@ -85,13 +92,13 @@ public:
 
     T & operator[](int index)
     {
-        // jassert(juce::isPositiveAndBelow(index, size()));
         return base().getReference(index);
     }
 
     T const & operator[](int index) const
     {
-        // jassert(juce::isPositiveAndBelow(index, size()));
         return base().getReference(index);
     }
 };
+
+NS_HWM_END

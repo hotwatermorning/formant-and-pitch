@@ -35,7 +35,8 @@ set(SOURCE_FILES
     Source/PluginEditor.h
     Source/RingBuffer.h
     Source/ReferenceableArray.h
-    Source/prefix.h
+    Source/AudioBufferUtil.h
+    Source/Prefix.h
     )
 
 source_group(TREE Source FILES ${SOURCE_FILES})
@@ -43,6 +44,7 @@ target_sources(${TARGET_NAME} PRIVATE ${SOURCE_FILES})
 
 target_compile_definitions(${TARGET_NAME}
     PUBLIC
+    DONT_SET_USING_JUCE_NAMESPACE=1
     # JUCE_WEB_BROWSER and JUCE_USE_CURL would be on by default, but you might not need them.
     JUCE_WEB_BROWSER=0  # If you remove this, add `NEEDS_WEB_BROWSER TRUE` to the `juce_add_plugin` call
     JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call

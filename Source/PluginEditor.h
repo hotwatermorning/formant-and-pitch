@@ -1,24 +1,24 @@
 #pragma once
 
-#include "prefix.h"
+#include "Prefix.h"
 #include "PluginProcessor.h"
 
 NS_HWM_BEGIN
 
 class XYPad
-:   public Component
-,   public Timer
+:   public juce::Component
+,   public juce::Timer
 {
 public:
     XYPad(PluginAudioProcessor& processor);
     ~XYPad() override;
 
 private:
-    void paint(Graphics& g) override;
+    void paint(juce::Graphics& g) override;
     void resized() override;
-    void mouseDown(MouseEvent const & mouse) override;
-    void mouseDrag(MouseEvent const & mouse) override;
-    void mouseUp(MouseEvent const & mouse) override;
+    void mouseDown(juce::MouseEvent const & mouse) override;
+    void mouseDrag(juce::MouseEvent const & mouse) override;
+    void mouseUp(juce::MouseEvent const & mouse) override;
 
     void timerCallback() override;
     PluginAudioProcessor& _processor;
@@ -37,15 +37,15 @@ private:
 };
 
 class Oscilloscope
-:   public Component
-,   public Timer
+:   public juce::Component
+,   public juce::Timer
 {
 public:
     Oscilloscope(PluginAudioProcessor& processor);
     ~Oscilloscope() override;
 
 private:
-    void paint(Graphics& g) override;
+    void paint(juce::Graphics& g) override;
     void resized() override;
 
     void timerCallback() override;
@@ -55,15 +55,15 @@ private:
 };
 
 class Spectrum
-:   public Component
-,   public Timer
+:   public juce::Component
+,   public juce::Timer
 {
 public:
     Spectrum(PluginAudioProcessor& processor);
     ~Spectrum() override;
 
 private:
-    void paint(Graphics& g) override;
+    void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(juce::MouseEvent const &ev) override;
 
@@ -97,7 +97,8 @@ private:
 };
 
 //==============================================================================
-class PluginAudioProcessorEditor  : public juce::AudioProcessorEditor
+class PluginAudioProcessorEditor
+:   public juce::AudioProcessorEditor
 {
 public:
     explicit PluginAudioProcessorEditor (PluginAudioProcessor&);
