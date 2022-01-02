@@ -16,10 +16,22 @@ XYPad::~XYPad()
 
 void XYPad::paint(Graphics& g)
 {
+    auto w = getWidth();
+    auto h = getHeight();
     auto x = getCoord(_cachedFormant);
     auto y = getHeight() - getCoord(_cachedPitch);
 
     g.fillAll(juce::Colours::black.withLightness(0.1f));
+
+    // x axis line
+    g.setColour(juce::Colours::white.withAlpha(0.2f));
+    g.drawLine(0, h / 2, w, h / 2);
+
+    // y axis line
+    g.setColour(juce::Colours::white.withAlpha(0.2f));
+    g.drawLine(w / 2, 0, w / 2, h);
+
+    // thumb
     g.setColour(juce::Colours::white);
     g.fillEllipse(x - _radius, y - _radius, _radius * 2, _radius * 2);
 
