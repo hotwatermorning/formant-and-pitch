@@ -5,3 +5,10 @@
 [C++ MIX #15](https://cppmix.connpass.com/event/359098/) の登壇で使用するボイスチェンジャーのサンプルプログラム。
 
 [プログラム101付き 音声信号処理](https://shop.cqpub.co.jp/detail/2539/) を参考に、Phase Vocoder とケプストラム分析によるスペクトル包絡の推定によってピッチシフトとフォルマントシフトをそれぞれ独立に行って、入力した音声にボイスチェンジャーのエフェクトを掛けられる。
+
+## ビルド方法
+
+```sh
+cmake -B build -G Xcode
+cmake --build build
+```
