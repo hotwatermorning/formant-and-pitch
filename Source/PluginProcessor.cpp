@@ -428,7 +428,6 @@ void PluginAudioProcessor::processAudioBlock()
         });
     };
 
-#if 1
     auto const formant = dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::formant))->get();
     auto const formantExpandAmount = std::pow(2.0, formant / 100.0);
     auto const pitch = dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::pitch))->get();
@@ -476,7 +475,7 @@ void PluginAudioProcessor::processAudioBlock()
             specData._originalSpectrum[i] = _frequencyBuffer[i];
         }
 
-#if 1
+#if 1 // フォルマントシフト
         // ピッチシフト前のスペクトルからスペクトル包絡を計算
         {
             for(int i = 0; i < fftSize; ++i) {
@@ -774,15 +773,6 @@ void PluginAudioProcessor::processAudioBlock()
             _spectrums[i].copyFrom(_tmpSpectrums[i]);
         }
     }
-
-#else
-    _tmpBuffer.clear();
-
-    auto tmp = getSubBufferOf(_tmpBuffer, numChannels, 0, overlapSize);
-    _inputRingBuffer.read(tmp);
-    _inputRingBuffer.discard(tmp.getNumSamples());
-    _outputRingBuffer.write(tmp);
-#endif
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::createParameterLayout()
