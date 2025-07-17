@@ -788,7 +788,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
 
     group->addChild(
         std::make_unique<juce::AudioParameterFloat>(
-            ParameterIds::formant,
+            juce::ParameterID { ParameterIds::formant, 1 },
             ParameterIds::formant,
             juce::NormalisableRange<float>{-100.0f, 100.0f},
             0.0f,
@@ -801,7 +801,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
 
     group->addChild(
         std::make_unique<juce::AudioParameterFloat>(
-            ParameterIds::pitch,
+            juce::ParameterID { ParameterIds::pitch, 1 },
             ParameterIds::pitch,
             juce::NormalisableRange<float>{-100.0f, 100.0f},
             0.0f,
@@ -814,13 +814,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
 
     group->addChild(
         std::make_unique<juce::AudioParameterInt>(
-            ParameterIds::envelopeOrder,
+            juce::ParameterID { ParameterIds::envelopeOrder, 1 },
             ParameterIds::envelopeOrder,
             2, 90, 20, ""));
 
     group->addChild(
         std::make_unique<juce::AudioParameterFloat>(
-            ParameterIds::dryWetRate,
+            juce::ParameterID { ParameterIds::dryWetRate, 1 },
             ParameterIds::dryWetRate,
             juce::NormalisableRange<float>{0.0f, 1.0f},
             0.5f,
@@ -833,7 +833,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
 
     group->addChild(
         std::make_unique<juce::AudioParameterFloat>(
-            ParameterIds::outputGain,
+            juce::ParameterID { ParameterIds::outputGain, 1 },
             ParameterIds::outputGain,
             juce::NormalisableRange<float>{Defines::outputGainMin, Defines::outputGainMax},
             Defines::outputGainDefault,

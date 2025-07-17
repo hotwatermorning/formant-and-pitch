@@ -372,7 +372,7 @@ struct RingBuffer
 
 private:
     juce::AudioBuffer<T> _buffer;
-    T ** getBuffer() { return _buffer.getArrayOfWritePointers(); }
+    T * const * getBuffer() { return _buffer.getArrayOfWritePointers(); }
     T const * const * getBuffer() const { return _buffer.getArrayOfReadPointers(); }
     T const * const * getConstBuffer() const { return _buffer.getArrayOfReadPointers(); }
 
