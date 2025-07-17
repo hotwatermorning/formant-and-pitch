@@ -10,7 +10,7 @@ PluginAudioProcessor::PluginAudioProcessor()
      : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                       .withInput  ("Input",  juce::AudioChannelSet::mono(), true)
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
@@ -269,7 +269,7 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     // モノラルで入力された場合は出力を広げる
     if (totalNumInputChannels == 1) {
         for (int channel = 1; channel < totalNumOutputChannels; ++channel) {
-            buffer.copyFrom(channel, 0, buffer, 0, 0, buffer.getNumSamples());
+            buffer.copyFrom(channel, 0, buffer, 0, 0, bufferSize);
         }
     }
 
@@ -287,15 +287,15 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
             _uiRingBuffer.discard(buffer.getNumSamples() - _uiRingBuffer.getNumWritable());
         }
 
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
-            auto const chData = buffer.getReadPointer(ch);
-            for(int smp = 0; smp < buffer.getNumSamples(); ++smp) {
-                if (isnan(chData[smp]) || isinf(chData[smp])) {
-                    jassert(false);
-                }
-            }
-        }
-        _uiRingBuffer.write(buffer);
+//        for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+//            auto const chData = buffer.getReadPointer(ch);
+//            for(int smp = 0; smp < buffer.getNumSamples(); ++smp) {
+//                if (isnan(chData[smp]) || isinf(chData[smp])) {
+//                    jassert(false);
+//                }
+//            }
+//        }
+        _uiRingBuffer.write(juce::AudioSampleBuffer(buffer.getArrayOfWritePointers(), 1, bufferSize));
     }
 }
 
@@ -419,7 +419,7 @@ void PluginAudioProcessor::processAudioBlock()
     auto const overlapSize = getOverlapSize();
     auto const numChannels = _inputRingBuffer.getNumChannels();
 
-    auto const validateArray = [](ReferenceableArray<ComplexType> const &arr) {
+    auto const validate_array = [](ReferenceableArray<ComplexType> const &arr) {
         return std::none_of(arr.begin(), arr.end(), [](ComplexType c) {
             auto n = std::norm(c);
             auto r = std::isnan(n) || std::isinf(n);
@@ -452,20 +452,20 @@ void PluginAudioProcessor::processAudioBlock()
         auto & specData = _tmpSpectrums[ch];
         auto &bi = _bufferInfoList[ch];
 
+        double originalPower = 0;
+
         jassert(_overlapCount >= 1);
         for(int i = 0, end = std::min(fftSize, bi._len1); i < end; ++i) {
-            _signalBuffer[i] = ComplexType { bi._buf1[i] * _window[i] / _overlapCount, 0 };
+            auto const smp = bi._buf1[i] / _overlapCount;
+            originalPower += smp * smp;
+            _signalBuffer[i] = ComplexType { smp * _window[i], 0 };
         }
 
         for(int i = bi._len1, end = fftSize; i < end; ++i) {
-            _signalBuffer[i] = ComplexType { bi._buf2[i - bi._len1] * _window[i] / _overlapCount, 0 };
+            auto const smp = bi._buf2[i - bi._len1] / _overlapCount;
+            originalPower += smp * smp;
+            _signalBuffer[i] = ComplexType { smp * _window[i], 0 };
         }
-
-        double const powerOfFrameSignals = std::reduce(_signalBuffer.begin(),
-                                                       _signalBuffer.end(),
-                                                       0.0f,
-                                                       [](double sum, ComplexType const &c) { return sum + std::norm(c); }
-                                                       );
 
 #if 1
         // スペクトルに変換
@@ -570,6 +570,7 @@ void PluginAudioProcessor::processAudioBlock()
 
                 _analysisMagnitude[i] = magnitude;
                 _analysisFrequencies[i] = (float)(i + binDeviation);
+                assert(isnan(_analysisFrequencies[i]) == false && isinf( _analysisFrequencies[i]) == false);
             }
 
             // 周波数変更
@@ -582,6 +583,7 @@ void PluginAudioProcessor::processAudioBlock()
                 // magnitude 
                 _synthesizeMagnitude[i] += _analysisMagnitude[shiftedBin];
                 _synthesizeFrequencies[i] = _analysisFrequencies[shiftedBin] * pitchChangeAmount;
+                assert(isnan(_synthesizeFrequencies[i]) == false && isinf(_synthesizeFrequencies[i]) == false);
             }
 
             for(int i = 0; i <= fftSize / 2; ++i) {
@@ -591,6 +593,7 @@ void PluginAudioProcessor::processAudioBlock()
                 phaseDiff += binCenterFrequency * hopSize;
 
                 auto phase = wrapPhase(_prevOutputPhases.getReadPointer(ch)[i] + phaseDiff);
+                // assert(isnan(phase) == false && isinf(phase) == false);
 
                 _frequencyBuffer[i] = ComplexType {
                     (float)(_synthesizeMagnitude[i] * std::cos(phase)),
@@ -604,7 +607,7 @@ void PluginAudioProcessor::processAudioBlock()
                 _frequencyBuffer[fftSize - i] = std::conj(_frequencyBuffer[i]);
             }
 
-            // assert(validate_array(_frequencyBuffer));
+            assert(validate_array(_frequencyBuffer));
         }
 #endif
         for(int i = 0; i < fftSize; ++i) {
@@ -647,7 +650,7 @@ void PluginAudioProcessor::processAudioBlock()
 
             _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), CEPSTRUM_FFT_FLAG);
 
-            // assert(validate_array(_cepstrumBuffer));
+            assert(validate_array(_cepstrumBuffer));
 
             // fine structure
             _tmpFFTBuffer[0] = ComplexType { 0, 0 };
@@ -662,7 +665,7 @@ void PluginAudioProcessor::processAudioBlock()
 
             _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_FFT_FLAG);
 
-            // assert(validate_array(_tmpFFTBuffer2));
+            assert(validate_array(_tmpFFTBuffer2));
 
             // ミラーした領域の微細構造は無視する
             if(pitchChangeAmount < 1.0) {
@@ -723,7 +726,7 @@ void PluginAudioProcessor::processAudioBlock()
             _frequencyBuffer[fftSize - i] = std::conj(_frequencyBuffer[i]);
         }
 
-        // assert(validate_array(_frequencyBuffer));
+        assert(validate_array(_frequencyBuffer));
 
         // 再合成されたスペクトル
         for(int i = 0; i < fftSize; ++i) {
@@ -744,16 +747,17 @@ void PluginAudioProcessor::processAudioBlock()
                        [](auto x) { return x.real(); }
                        );
 
-        double const powerOfSynthesizedSignals = std::reduce(_tmpBuffer.getReadPointer(ch),
-                                                             _tmpBuffer.getReadPointer(ch) + fftSize,
-                                                             0.0f,
-                                                             [](double sum, double x) { return sum + (x * x); }
-                                                             );
+        double const synthesizedPower = std::reduce(_tmpBuffer.getReadPointer(ch),
+                                                    _tmpBuffer.getReadPointer(ch) + fftSize,
+                                                    0.0f,
+                                                    [](double sum, double x) { return sum + (x * x); }
+                                                    );
 
-        float const expectedGainAmount = (float)std::sqrt((powerOfSynthesizedSignals == 0) ? 1.0 : powerOfFrameSignals / powerOfSynthesizedSignals);
+        float const expectedGainAmount = (float)std::sqrt((synthesizedPower == 0) ? 1.0 : originalPower / synthesizedPower);
         _smoothedGain.setTargetValue(expectedGainAmount);
-        float const newGainAmount = _smoothedGain.getNextValue();
-        FVO::multiply(_tmpBuffer.getWritePointer(ch), newGainAmount, fftSize);
+        for(int i = 0; i < fftSize; ++i) {
+            _tmpBuffer.getWritePointer(ch)[i] *=_smoothedGain.getNextValue();
+        }
 
 //        for(int i = 0; i < fftSize; ++i) {
 //            auto x = _tmpBuffer.getReadPointer(ch)[i];
