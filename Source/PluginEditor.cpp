@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cassert>
 
 NS_HWM_BEGIN
 
@@ -133,6 +134,9 @@ void Oscilloscope::paint(juce::Graphics& g)
     auto const data = _buffer.getReadPointer(0);
     auto const N = _buffer.getNumSamples();
     for(int i = 0; i < N; ++i) {
+        if (std::isnan(data[i])) {
+            jassert(false);
+        }
         p.lineTo((float)i / N * w, -(data[i] / 2.0f - 0.5f) * h);
     }
 

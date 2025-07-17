@@ -4,6 +4,7 @@
 #include "RingBuffer.h"
 #include "AudioBufferUtil.h"
 #include "ReferenceableArray.h"
+#include <cassert>
 
 NS_HWM_BEGIN
 
@@ -16,6 +17,8 @@ struct Defines {
 
 struct ParameterIds
 {
+    inline static const juce::String fftSize = "FFT Size";
+    inline static const juce::String overlapCount = "Overlap Count";
     inline static const juce::String formant = "Formant";
     inline static const juce::String pitch = "Pitch";
     inline static const juce::String envelopeOrder = "Envelope Order";
@@ -25,6 +28,7 @@ struct ParameterIds
 
 class PluginAudioProcessor
 :   public juce::AudioProcessor
+,   public juce::AudioProcessorListener
 {
 public:
     //==============================================================================
@@ -128,8 +132,8 @@ private:
 
     using RingBufferType = RingBuffer<float>;
 
-    static constexpr int _fftOrder = 9;
-    static constexpr int _overlapCount = 8;
+    int _fftOrder = 0;
+    int _overlapCount = 0;
     int getFFTSize() const { return 1 << _fftOrder; }
     int getOverlapSize() const { return getFFTSize() / _overlapCount; }
 
@@ -164,9 +168,37 @@ private:
     void processAudioBlock();
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    struct ProcessLock {
+        void lock() {
+            for( ; ; ) {
+                if(try_lock()) {
+                    return;
+                }
+            }
+        }
+
+        bool try_lock() {
+            bool expected = false;
+            return _lock.compare_exchange_strong(expected, true);
+        }
+
+        void unlock()
+        {
+            _lock.exchange(false);
+        }
+
+    private:
+        std::atomic<bool> _lock = false;
+    };
+
+    ProcessLock _processLock;
+
     // 変換した信号の音量が変わってしまうのを補正するための係数。
     // 毎回の解析でこれをやると音量の変化が大きくなりすぎることがあるのでスムーズに変換するようにしている。
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> _smoothedGain;
+
+    void audioProcessorParameterChanged(juce::AudioProcessor *processor, int parameterIndex, float newValue) override;
+    void audioProcessorChanged(juce::AudioProcessor *processor, const juce::AudioProcessor::ChangeDetails &details) override;
 
     //==============================================================================
     JUCE_DECLARE_WEAK_REFERENCEABLE(PluginAudioProcessor)

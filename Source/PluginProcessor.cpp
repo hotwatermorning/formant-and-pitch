@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cassert>
 
 NS_HWM_BEGIN
 
@@ -17,10 +18,12 @@ PluginAudioProcessor::PluginAudioProcessor()
      , _apvts(*this, nullptr, "AudioProcessorState", createParameterLayout())
 #endif
 {
+    addListener(this);
 }
 
 PluginAudioProcessor::~PluginAudioProcessor()
 {
+    removeListener(this);
 }
 
 //==============================================================================
@@ -94,6 +97,13 @@ void PluginAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 {
     auto const totalNumInputChannels  = getTotalNumInputChannels();
     auto const totalNumOutputChannels = getTotalNumOutputChannels();
+
+    setRateAndBufferSizeDetails(sampleRate, samplesPerBlock);
+
+    auto fftParam = static_cast<juce::AudioParameterChoice * >(_apvts.getParameter(ParameterIds::fftSize));
+    auto overlapParam = static_cast<juce::AudioParameterChoice * >(_apvts.getParameter(ParameterIds::fftSize));
+    _fftOrder = fftParam->getIndex() + 8;
+    _overlapCount = 1 << (overlapParam->getIndex() + 1);
 
     int const fftSize = getFFTSize();
     int const overlapSize = getOverlapSize();
@@ -170,11 +180,19 @@ bool PluginAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
     juce::ignoreUnused (layouts);
     return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
+
+    if (juce::JUCEApplicationBase::isStandaloneApp()) {
+        if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()) {
+            return false;
+        }
+    } else {
+        // This is the place where you check if the layout is supported.
+        // In this template code we only support mono or stereo.
+        if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+            && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) {
+            return false;
+        }
+    }
 
     // This checks if the input layout matches the output layout
    #if ! JucePlugin_IsSynth
@@ -189,27 +207,33 @@ bool PluginAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
 
 void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    // TODO: フェードアウトを実装したい
+    std::unique_lock lock(_processLock, std::try_to_lock);
+    if(lock.owns_lock() == false) {
+        return;
+    }
+
     juce::ignoreUnused(midiMessages);
 
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
+    auto const bufferSize = std::min<int>(getBlockSize(), buffer.getNumSamples());
 
     auto const wetLevel = dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::dryWetRate))->get();
     auto const dryLevel = 1.0f - wetLevel;
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     {
-        buffer.clear (i, 0, buffer.getNumSamples());
+        buffer.clear (i, 0, bufferSize);
     }
-    
+
 #if 1
+
     int const fftSize = getFFTSize();
     int const overlapSize = getOverlapSize();
     int bufferConsumed = 0;
-    int const bufferSize = buffer.getNumSamples();
 
-    // TODO: buffer のサイズが prepareToPlay で指定されたサイズを超える場合への対処
     for( ; ; ) {
         if(bufferConsumed == bufferSize) { break; }
 
@@ -242,6 +266,13 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     auto *outputGainParam = dynamic_cast<juce::AudioParameterFloat *>(_apvts.getParameter(ParameterIds::outputGain));
     auto outputGain = juce::Decibels::decibelsToGain(outputGainParam->get(), Defines::outputGainSilent);
 
+    // モノラルで入力された場合は出力を広げる
+    if (totalNumInputChannels == 1) {
+        for (int channel = 1; channel < totalNumOutputChannels; ++channel) {
+            buffer.copyFrom(channel, 0, buffer, 0, 0, buffer.getNumSamples());
+        }
+    }
+
     for (int channel = 0; channel < totalNumOutputChannels; ++channel)
     {
         auto data = buffer.getWritePointer(channel);
@@ -256,6 +287,14 @@ void PluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
             _uiRingBuffer.discard(buffer.getNumSamples() - _uiRingBuffer.getNumWritable());
         }
 
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+            auto const chData = buffer.getReadPointer(ch);
+            for(int smp = 0; smp < buffer.getNumSamples(); ++smp) {
+                if (isnan(chData[smp]) || isinf(chData[smp])) {
+                    jassert(false);
+                }
+            }
+        }
         _uiRingBuffer.write(buffer);
     }
 }
@@ -372,13 +411,22 @@ float wrapPhase(float phaseIn)
     }
 }
 
-#define CEPSTRUM_WITH_FFT_FLAG true
+#define CEPSTRUM_FFT_FLAG true
 
 void PluginAudioProcessor::processAudioBlock()
 {
     auto const fftSize = getFFTSize();
     auto const overlapSize = getOverlapSize();
     auto const numChannels = _inputRingBuffer.getNumChannels();
+
+    auto const validateArray = [](ReferenceableArray<ComplexType> const &arr) {
+        return std::none_of(arr.begin(), arr.end(), [](ComplexType c) {
+            auto n = std::norm(c);
+            auto r = std::isnan(n) || std::isinf(n);
+            assert(r == false);
+            return r;
+        });
+    };
 
 #if 1
     auto const formant = dynamic_cast<juce::AudioParameterFloat*>(_apvts.getParameter(ParameterIds::formant))->get();
@@ -389,13 +437,6 @@ void PluginAudioProcessor::processAudioBlock()
     auto const envelopAmount = 1.0;
     auto const fineStructureAmount = 1.0;
 
-    // 定期的に位相をリセット（暫定）
-    static int phaseReset = 0;
-    if((phaseReset++ % 1000) == 0) {
-//        _prevInputPhases.clear();
-//        _prevOutputPhases.clear();
-    }
-
     jassert(_signalBuffer.size() == fftSize);
     jassert(_frequencyBuffer.size() == fftSize);
     jassert(_cepstrumBuffer.size() == fftSize);
@@ -404,15 +445,6 @@ void PluginAudioProcessor::processAudioBlock()
         _bufferInfoList[ch] = bi;
         assert(bi._len1 + bi._len2 >= fftSize);
     });
-
-//    auto const validate_array = [](ReferenceableArray<ComplexType> const &arr) {
-//        return std::none_of(arr.begin(), arr.end(), [](ComplexType c) {
-//            auto n = std::norm(c);
-//            auto r = std::isnan(n) || std::isinf(n);
-//            assert(r == false);
-//            return r;
-//        });
-//    };
 
     _tmpBuffer.clear();
     for(int ch = 0; ch < numChannels; ++ch) {
@@ -444,22 +476,6 @@ void PluginAudioProcessor::processAudioBlock()
             specData._originalSpectrum[i] = _frequencyBuffer[i];
         }
 
-#if 0
-        // fft 後の係数がどれくらいになるかを確認
-        {
-            _fft->perform(_frequencyBuffer.data(), _tmpFFTBuffer.data(), true);
-            auto sumOriginal = std::reduce(_signalBuffer.begin(), _signalBuffer.end(), 0.0, [](double x, ComplexType c) { return x + std::norm(c); });
-            auto sumTransformed = std::reduce(_frequencyBuffer.begin(), _frequencyBuffer.end(), 0.0, [](double x, ComplexType c) { return x + std::norm(c); });
-            auto sumRestored = std::reduce(_tmpFFTBuffer.begin(), _tmpFFTBuffer.end(), 0.0, [](double x, ComplexType c) { return x + std::norm(c); });
-
-            if(sumOriginal != 0) {
-                double ratio1 = sumTransformed / sumOriginal; // パワーが fftSize 倍された状態になる
-                double ratio2 = sumRestored / sumOriginal;
-                double y = ratio1;
-            }
-        }
-#endif
-
 #if 1
         // ピッチシフト前のスペクトルからスペクトル包絡を計算
         {
@@ -473,15 +489,7 @@ void PluginAudioProcessor::processAudioBlock()
                 _tmpFFTBuffer[i] = ComplexType { r, 0.0 };
             }
 
-            _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), CEPSTRUM_WITH_FFT_FLAG);
-
-//            ReferenceableArray<ComplexType> tmp1;
-//            ReferenceableArray<ComplexType> tmp2;
-
-//            tmp1.resize(fftSize);
-//            tmp2.resize(fftSize);
-//            _fft->perform(_cepstrumBuffer.data(), tmp1.data(), !CEPSTRUM_WITH_FFT_FLAG);
-//            _fft->perform(tmp1.data(), tmp2.data(), CEPSTRUM_WITH_FFT_FLAG);
+            _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), CEPSTRUM_FFT_FLAG);
 
             // assert(validate_array(_cepstrumBuffer));
 
@@ -502,13 +510,7 @@ void PluginAudioProcessor::processAudioBlock()
                 }
             }
 
-//            for(int i = 0; i < fftSize; ++i) {
-//                if(_tmpFFTBuffer[i] != _cepstrumBuffer[i]) {
-//                    assert(false);
-//                }
-//            }
-
-            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_WITH_FFT_FLAG);
+            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_FFT_FLAG);
 
             // assert(validate_array(_tmpFFTBuffer2));
 
@@ -561,11 +563,11 @@ void PluginAudioProcessor::processAudioBlock()
                 auto phase = std::arg(_frequencyBuffer[i]);
                 double binCenterFrequency = 2.0 * M_PI * i / fftSize;
 
-                double phaseDiff = phase - _prevInputPhases.getReadPointer(ch)[i];
+                double phaseDiff = phase - _prevInputPhases.getReadPointer(ch)[i]; // 前回フレームからの位相の進んだ量
                 _prevInputPhases.getWritePointer(ch)[i] = phase;
 
-                phaseDiff = wrapPhase(phaseDiff - binCenterFrequency * hopSize);
-                double binDeviation = phaseDiff * fftSize / hopSize / (2 * M_PI);
+                phaseDiff = wrapPhase(phaseDiff - binCenterFrequency * hopSize); // 中心周波数が hopSize によって進む量との差分を検出
+                double binDeviation = phaseDiff * fftSize / (hopSize * 2 * M_PI); // それを周波数ビン1つ分の周波数幅 * hopSize で割る => 周波数ビン1つのなかでの相対位置を 0.0..1.0 で算出する。
 
                 _analysisMagnitude[i] = magnitude;
                 _analysisFrequencies[i] = (float)(i + binDeviation);
@@ -578,6 +580,7 @@ void PluginAudioProcessor::processAudioBlock()
                 int shiftedBin = std::floor(i / pitchChangeAmount + 0.5);
                 if(shiftedBin > fftSize / 2) { break; }
 
+                // magnitude 
                 _synthesizeMagnitude[i] += _analysisMagnitude[shiftedBin];
                 _synthesizeFrequencies[i] = _analysisFrequencies[shiftedBin] * pitchChangeAmount;
             }
@@ -643,7 +646,7 @@ void PluginAudioProcessor::processAudioBlock()
                 _tmpFFTBuffer[i] = ComplexType { r, 0.0 };
             }
 
-            _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), CEPSTRUM_WITH_FFT_FLAG);
+            _fft->perform(_tmpFFTBuffer.data(), _cepstrumBuffer.data(), CEPSTRUM_FFT_FLAG);
 
             // assert(validate_array(_cepstrumBuffer));
 
@@ -658,7 +661,7 @@ void PluginAudioProcessor::processAudioBlock()
                 }
             }
 
-            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_WITH_FFT_FLAG);
+            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_FFT_FLAG);
 
             // assert(validate_array(_tmpFFTBuffer2));
 
@@ -693,7 +696,7 @@ void PluginAudioProcessor::processAudioBlock()
 
             // assert(validate_array(_tmpFFTBuffer));
 
-            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_WITH_FFT_FLAG);
+            _fft->perform(_tmpFFTBuffer.data(), _tmpFFTBuffer2.data(), !CEPSTRUM_FFT_FLAG);
 
             // assert(validate_array(_tmpFFTBuffer2));
 
@@ -787,6 +790,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
     auto group = std::make_unique<juce::AudioProcessorParameterGroup>("Group", "Global", "|");
 
     group->addChild(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { ParameterIds::fftSize, 1 },
+            ParameterIds::fftSize,
+            juce::StringArray{"256", "512", "1024", "2048", "4096", "8192", "16384"},
+            2
+            ));
+
+    group->addChild(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { ParameterIds::overlapCount, 1 },
+            ParameterIds::overlapCount,
+            juce::StringArray{"2", "4", "8", "16", "32", "64"},
+            2
+            ));
+
+    group->addChild(
         std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID { ParameterIds::formant, 1 },
             ParameterIds::formant,
@@ -845,6 +864,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginAudioProcessor::create
             nullptr));
 
     return juce::AudioProcessorValueTreeState::ParameterLayout(std::move(group));
+}
+
+void PluginAudioProcessor::audioProcessorParameterChanged(juce::AudioProcessor *processor, int parameterIndex, float newValue)
+{
+    auto const changedParam = getParameters()[parameterIndex];
+    auto const fftParamChanged = changedParam == _apvts.getParameter(ParameterIds::fftSize);
+    auto const overlapParamChanged = changedParam == _apvts.getParameter(ParameterIds::overlapCount);
+    if(fftParamChanged || overlapParamChanged) {
+        std::unique_lock lock(_processLock);
+        prepareToPlay(getSampleRate(), getBlockSize());
+    }
+}
+
+void PluginAudioProcessor::audioProcessorChanged(juce::AudioProcessor *processor, const juce::AudioProcessor::ChangeDetails &details)
+{
+    // do nothing.
 }
 
 NS_HWM_END
